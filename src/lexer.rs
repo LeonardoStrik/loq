@@ -38,6 +38,12 @@ impl TokenKind {
         }
         false
     }
+    fn is_operator(self) -> bool {
+        self.is_in(TokenKind::OPERATORS)
+    }
+    fn is_operand(self) -> bool {
+        self.is_in(TokenKind::OPERANDS)
+    }
 }
 #[derive(Clone, Debug)]
 pub struct Token {
@@ -285,6 +291,16 @@ impl Parser {
                     let expr = self.parse_binop(left).expect("Expected binary operator");
                     self.stash.push(expr);
                 }
+                x if x.is_operator() => {
+                    let left = self
+                        .stash
+                        .pop()
+                        .expect("Expected an operand before an operator");
+                    let expr = self
+                        .parse_binop(left)
+                        .expect("expected an operand after operator");
+                    self.stash.push(expr)
+                }
                 _ => panic!(),
             }
         }
@@ -348,7 +364,8 @@ mod tests {
         fn test_parser_on_string(input: String) {
             let mut parser = Parser::from_string(input);
             let expr = parser.parse().unwrap();
-            println!("{}", expr)
+            println!("{:#?}", expr);
+            println!("{}", expr);
         }
         let some_string = String::from("abc+1234");
         test_parser_on_string(some_string);
@@ -357,6 +374,8 @@ mod tests {
         let some_string = String::from("abc-1234");
         test_parser_on_string(some_string);
         let some_string = String::from("abc*1234");
+        test_parser_on_string(some_string);
+        let some_string = String::from("abc*1234+4321");
         test_parser_on_string(some_string);
     }
 }
