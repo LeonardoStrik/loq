@@ -1,7 +1,8 @@
+use std::env::args;
 use std::fmt;
 use std::string::String;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct Loc {
     pub ln: i32,
     pub col: i32,
@@ -86,6 +87,39 @@ pub enum Expr {
     Variable {
         token: Token,
     },
+}
+impl Expr {
+    pub fn eval(&self) -> Option<f64> {
+        match self {
+            Expr::BinOp {
+                op_kind,
+                left,
+                right,
+            } => {
+                let a = left.eval().unwrap();
+                let b = right.eval().unwrap();
+                match op_kind {
+                    TokenKind::Mult => Some(a * b),
+                    TokenKind::Div => Some(a / b),
+                    TokenKind::Plus => Some(a + b),
+                    TokenKind::Min => Some(a - b),
+                    TokenKind::Pow => Some(a.powf(b)),
+                    _ => None,
+                }
+            }
+            Expr::Fun {
+                functor: _,
+                args: _,
+            } => todo!("evaluate function"),
+            Expr::Value { token } => Some(
+                token
+                    .value
+                    .parse::<f64>()
+                    .expect("failed parsing NumLit to f64"),
+            ),
+            Expr::Variable { token: _ } => todo!("evaluate variables"),
+        }
+    }
 }
 impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -364,8 +398,8 @@ mod tests {
         fn test_parser_on_string(input: String) {
             let mut parser = Parser::from_string(input);
             let expr = parser.parse().unwrap();
-            println!("{:#?}", expr);
             println!("{}", expr);
+            println!("{:#?}", expr);
         }
         let some_string = String::from("abc+1234");
         test_parser_on_string(some_string);
@@ -377,5 +411,32 @@ mod tests {
         test_parser_on_string(some_string);
         let some_string = String::from("abc*1234+4321");
         test_parser_on_string(some_string);
+        let some_string = String::from("abc*1234+4321*420/69");
+        test_parser_on_string(some_string);
+    }
+    #[test]
+
+    fn test_expr_eval() {
+        fn test_expr_eval_on_string(input: String, expected: f64) {
+            let mut parser = Parser::from_string(input);
+            let expr = parser.parse().expect("failed to parse expression");
+            let val = expr.eval().expect("could not evaluate expr");
+            assert_eq!(
+                val, expected,
+                "evaluating {} did not yield {}",
+                expr, expected
+            );
+        }
+
+        let some_string = String::from("123+456");
+        test_expr_eval_on_string(some_string, 579.0);
+        let some_string = String::from("123-456");
+        test_expr_eval_on_string(some_string, -333.0);
+        let some_string = String::from("123*456");
+        test_expr_eval_on_string(some_string, 56088.0);
+        let some_string = String::from("2^3");
+        test_expr_eval_on_string(some_string, 8.0);
+        let some_string = String::from("123/456");
+        test_expr_eval_on_string(some_string, 123.0 / 456.0);
     }
 }
