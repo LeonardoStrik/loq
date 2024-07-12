@@ -45,6 +45,17 @@ impl TokenKind {
     fn is_operand(self) -> bool {
         self.is_in(TokenKind::OPERANDS)
     }
+    fn get_priority(self) -> i32 {
+        match self {
+            TokenKind::Pow => 0,
+            TokenKind::Mult => 1,
+            TokenKind::Div => 1,
+            TokenKind::Plus => 2,
+            TokenKind::Min => 2,
+
+            _ => panic!("requested operator priority on a {:?}", self),
+        }
+    }
 }
 #[derive(Clone, Debug)]
 pub struct Token {
@@ -303,13 +314,44 @@ impl Parser {
         }
     }
     fn parse_binop(&mut self, left: Expr) -> Option<Expr> {
+        // TODO: Somehow refactor this to eliminate hella copy-pasting in checking whether to parse next expression or not
+        // TODO: fix preferential parsing after high prio e.g. 1+2^3/4->1+((2^3)/4)
         if let Some(operator) = self.lexer.expect_token_kinds(TokenKind::OPERATORS) {
             if let Some(right) = self.parse_expr() {
-                return Some(Expr::BinOp {
-                    op_kind: operator.kind,
-                    left: Box::new(left),
-                    right: Box::new(right),
-                });
+                match self.lexer.peek_token() {
+                    Some(token) => match token.kind {
+                        TokenKind::OpenParen => todo!("parse brackets preferentially"),
+                        TokenKind::CloseParen => todo!("parse brackets preferentially"),
+                        x if x.is_operator() => {
+                            if x.get_priority() < operator.kind.get_priority() {
+                                return Some(Expr::BinOp {
+                                    op_kind: operator.kind,
+                                    left: Box::new(left),
+                                    right: Box::new(self.parse_binop(right).unwrap()),
+                                });
+                            } else {
+                                {
+                                    return Some(Expr::BinOp {
+                                        op_kind: operator.kind,
+                                        left: Box::new(left),
+                                        right: Box::new(right),
+                                    });
+                                }
+                            }
+                        }
+                        _ => {
+                            println!("panicked on token {}", token);
+                            panic!("expected an operator or bracket after an operand")
+                        }
+                    },
+                    None => {
+                        return Some(Expr::BinOp {
+                            op_kind: operator.kind,
+                            left: Box::new(left),
+                            right: Box::new(right),
+                        });
+                    }
+                }
             }
         }
         None
@@ -438,5 +480,12 @@ mod tests {
         test_expr_eval_on_string(some_string, 8.0);
         let some_string = String::from("123/456");
         test_expr_eval_on_string(some_string, 123.0 / 456.0);
+        let some_string = String::from("2+3*3");
+        test_expr_eval_on_string(some_string, 11.0);
+        let some_string = String::from("3*2^3");
+        test_expr_eval_on_string(some_string, 24.0);
+        let some_string = String::from("1+3*2^4/8+6-3");
+        println!("{}", Parser::from_string(some_string).parse().unwrap());
+        // test_expr_eval_on_string(some_string, 10.0);
     }
 }
