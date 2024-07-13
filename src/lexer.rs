@@ -81,7 +81,7 @@ impl fmt::Display for Token {
         write!(f, "{}", output)
     }
 }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expr {
     BinOp {
         op_kind: TokenKind,
@@ -161,6 +161,7 @@ pub struct Lexer {
     pub counter: usize,
     pub current_loc: Loc,
     peeked_token: Option<Token>,
+    is_empty: bool,
 }
 impl Iterator for Lexer {
     type Item = Token;
@@ -176,6 +177,7 @@ impl Lexer {
             counter: 0,
             current_loc: Loc { ln: 0, col: -1 },
             peeked_token: None,
+            is_empty: false,
         }
     }
     fn peek_char(&mut self) -> Option<char> {
@@ -315,27 +317,43 @@ impl Parser {
     }
     fn parse_binop(&mut self, left: Expr) -> Option<Expr> {
         // TODO: Somehow refactor this to eliminate hella copy-pasting in checking whether to parse next expression or not
-        // TODO: fix preferential parsing after high prio e.g. 1+2^3/4->1+((2^3)/4)
         if let Some(operator) = self.lexer.expect_token_kinds(TokenKind::OPERATORS) {
+            // let current_prio = current_prio.unwrap_or(operator.kind.get_priority());
             if let Some(right) = self.parse_expr() {
-                match self.lexer.peek_token() {
-                    Some(token) => match token.kind {
+                while let Some(token) = self.lexer.peek_token() {
+                    match token.kind {
                         TokenKind::OpenParen => todo!("parse brackets preferentially"),
                         TokenKind::CloseParen => todo!("parse brackets preferentially"),
                         x if x.is_operator() => {
                             if x.get_priority() < operator.kind.get_priority() {
-                                return Some(Expr::BinOp {
-                                    op_kind: operator.kind,
-                                    left: Box::new(left),
-                                    right: Box::new(self.parse_binop(right).unwrap()),
-                                });
+                                match self.stash.pop() {
+                                    Some(prev_expr) => {
+                                        let temp_right = self.parse_binop(prev_expr).unwrap();
+                                        self.stash.push(temp_right)
+                                    }
+                                    None => {
+                                        let temp_right = self.parse_binop(right.clone()).unwrap();
+                                        self.stash.push(temp_right)
+                                    }
+                                }
                             } else {
                                 {
-                                    return Some(Expr::BinOp {
-                                        op_kind: operator.kind,
-                                        left: Box::new(left),
-                                        right: Box::new(right),
-                                    });
+                                    match self.stash.pop() {
+                                        Some(right_expr) => {
+                                            return Some(Expr::BinOp {
+                                                op_kind: operator.kind,
+                                                left: Box::new(left),
+                                                right: Box::new(right_expr),
+                                            });
+                                        }
+                                        None => {
+                                            return Some(Expr::BinOp {
+                                                op_kind: operator.kind,
+                                                left: Box::new(left),
+                                                right: Box::new(right),
+                                            });
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -343,7 +361,16 @@ impl Parser {
                             println!("panicked on token {}", token);
                             panic!("expected an operator or bracket after an operand")
                         }
-                    },
+                    }
+                }
+                match self.stash.pop() {
+                    Some(right_expr) => {
+                        return Some(Expr::BinOp {
+                            op_kind: operator.kind,
+                            left: Box::new(left),
+                            right: Box::new(right_expr),
+                        });
+                    }
                     None => {
                         return Some(Expr::BinOp {
                             op_kind: operator.kind,
@@ -485,7 +512,8 @@ mod tests {
         let some_string = String::from("3*2^3");
         test_expr_eval_on_string(some_string, 24.0);
         let some_string = String::from("1+3*2^4/8+6-3");
-        println!("{}", Parser::from_string(some_string).parse().unwrap());
-        // test_expr_eval_on_string(some_string, 10.0);
+        test_expr_eval_on_string(some_string, 10.0);
+        let some_string = String::from("1+3*2^4/8+6-31+3*2^4/8+6-3");
+        test_expr_eval_on_string(some_string, -9.0);
     }
 }
