@@ -141,7 +141,7 @@ impl fmt::Display for Expr {
                 right,
             } => write!(
                 f,
-                "{}{}{}",
+                "({}{}{})",
                 left,
                 Token {
                     kind: *op_kind,
