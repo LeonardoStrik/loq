@@ -1,6 +1,6 @@
 use std::env::args;
-use std::fmt;
 use std::string::String;
+use std::{fmt, result};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Loc {
@@ -291,6 +291,9 @@ impl Lexer {
         }
         None
     }
+    fn drop_token(&mut self) {
+        let _ = self.next_token();
+    }
 }
 
 pub struct Parser {
@@ -304,11 +307,12 @@ impl Parser {
             stash: vec![],
         }
     }
-    fn parse_expr(&mut self) -> Option<Expr> {
-        if let Some(token) = self.lexer.expect_token_kinds(TokenKind::OPERANDS) {
+    fn parse_operand(&mut self) -> Option<Expr> {
+        if let Some(token) = self.lexer.next_token() {
             match token.kind {
                 TokenKind::Ident => Some(Expr::Variable { token }),
                 TokenKind::NumLit => Some(Expr::Value { token }),
+                TokenKind::OpenParen => self.parse(),
                 _ => None,
             }
         } else {
@@ -319,11 +323,25 @@ impl Parser {
         // TODO: Somehow refactor this to eliminate hella copy-pasting in checking whether to parse next expression or not
         if let Some(operator) = self.lexer.expect_token_kinds(TokenKind::OPERATORS) {
             // let current_prio = current_prio.unwrap_or(operator.kind.get_priority());
-            if let Some(right) = self.parse_expr() {
+            if let Some(right) = self.parse_operand() {
                 while let Some(token) = self.lexer.peek_token() {
                     match token.kind {
-                        TokenKind::OpenParen => todo!("parse brackets preferentially"),
-                        TokenKind::CloseParen => todo!("parse brackets preferentially"),
+                        TokenKind::CloseParen => match self.stash.pop() {
+                            Some(right_expr) => {
+                                return Some(Expr::BinOp {
+                                    op_kind: operator.kind,
+                                    left: Box::new(left),
+                                    right: Box::new(right_expr),
+                                });
+                            }
+                            None => {
+                                return Some(Expr::BinOp {
+                                    op_kind: operator.kind,
+                                    left: Box::new(left),
+                                    right: Box::new(right),
+                                });
+                            }
+                        },
                         x if x.is_operator() => {
                             if x.get_priority() < operator.kind.get_priority() {
                                 match self.stash.pop() {
@@ -386,10 +404,18 @@ impl Parser {
     pub fn parse(&mut self) -> Option<Expr> {
         while let Some(peek_token) = self.lexer.peek_token() {
             match peek_token.kind {
-                TokenKind::OpenParen => todo!(),
+                TokenKind::OpenParen => {
+                    self.lexer.drop_token();
+                    let result = self.parse().expect("expected expression after open paren");
+                    self.stash.push(result)
+                }
+                TokenKind::CloseParen => {
+                    self.lexer.drop_token();
+                    return self.stash.pop();
+                }
                 TokenKind::Ident | TokenKind::NumLit => {
                     let left = self
-                        .parse_expr()
+                        .parse_operand()
                         .expect("matched Ident on peek but failed to parse expr");
                     let expr = self.parse_binop(left).expect("Expected binary operator");
                     self.stash.push(expr);
@@ -404,7 +430,7 @@ impl Parser {
                         .expect("expected an operand after operator");
                     self.stash.push(expr)
                 }
-                _ => panic!(),
+                _ => panic!("panicked on token {}", peek_token),
             }
         }
         self.stash.pop()
@@ -414,33 +440,22 @@ impl Parser {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn it_works() {
-        let some_string = String::from("abc+1234+c");
-        let mut buffer = " ".repeat(some_string.len());
-        let mut tokens: Vec<Token> = vec![];
-        let mut lexer = Lexer::from_string(some_string);
-        loop {
-            if let Some(token) = lexer.peek_token() {
-                println!("{}", token);
-            }
-            match lexer.next_token() {
-                Some(token) => tokens.push(token),
-                None => break,
-            }
-        }
-        for token in tokens {
-            print!("{}", token);
-            buffer.insert(token.loc.col as usize, '^');
-        }
-        println!();
-        println!("{}", buffer);
+    fn start_test(name: &str) {
+        println!("--------------------------------------------");
+        println!("start {} test", name);
+        println!("--------------------------------------------");
+    }
+    fn end_test(name: &str) {
+        println!("--------------------------------------------");
+        println!("end {} test", name);
+        println!("--------------------------------------------");
     }
     #[test]
     fn test_expect_token_kinds() {
-        let some_string = String::from("(abc+1234*c)^/-");
+        start_test("expect_token_kinds");
+        let some_string = String::from("(abc+1234*c)^/-abcd");
         let mut lexer = Lexer::from_string(some_string);
+
         fn assert_token_kind(lexer: &mut Lexer, kind: TokenKind) {
             assert_eq!(
                 (&lexer.expect_token_kinds(&[kind.clone()]).unwrap().kind),
@@ -460,10 +475,20 @@ mod tests {
         assert_token_kind(&mut lexer, TokenKind::Pow);
         assert_token_kind(&mut lexer, TokenKind::Div);
         assert_token_kind(&mut lexer, TokenKind::Min);
+        assert_eq!(
+            lexer
+                .expect_token_kinds(&[TokenKind::OPERANDS, &[TokenKind::OpenParen]].concat())
+                .unwrap()
+                .kind,
+            TokenKind::Ident
+        );
+
+        end_test("expect_token_kinds");
     }
 
     #[test]
     fn test_parser() {
+        start_test("parser");
         fn test_parser_on_string(input: String) {
             let mut parser = Parser::from_string(input);
             let expr = parser.parse().unwrap();
@@ -482,14 +507,19 @@ mod tests {
         test_parser_on_string(some_string);
         let some_string = String::from("abc*1234+4321*420/69");
         test_parser_on_string(some_string);
+        end_test("parser");
     }
     #[test]
 
     fn test_expr_eval() {
+        start_test("expr_eval");
+
         fn test_expr_eval_on_string(input: String, expected: f64) {
             let mut parser = Parser::from_string(input);
             let expr = parser.parse().expect("failed to parse expression");
             let val = expr.eval().expect("could not evaluate expr");
+            println!("{} evaluated to {}", expr, val);
+
             assert_eq!(
                 val, expected,
                 "evaluating {} did not yield {}",
@@ -515,5 +545,10 @@ mod tests {
         test_expr_eval_on_string(some_string, 10.0);
         let some_string = String::from("1+3*2^4/8+6-31+3*2^4/8+6-3");
         test_expr_eval_on_string(some_string, -9.0);
+        let some_string = String::from("(123+456)*2");
+        test_expr_eval_on_string(some_string, 1158.0);
+        let some_string = String::from("(1+2)*(3-4)^(2*3)");
+        test_expr_eval_on_string(some_string, 3.0);
+        end_test("expr_eval");
     }
 }
