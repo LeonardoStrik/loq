@@ -549,6 +549,10 @@ mod tests {
         test_expr_eval_on_string(some_string, 1158.0);
         let some_string = String::from("(1+2)*(3-4)^(2*3)");
         test_expr_eval_on_string(some_string, 3.0);
+        let some_string = String::from("((1+2)*(3-4))^(2*3)");
+        test_expr_eval_on_string(some_string, 729.0);
+        let some_string = String::from("(1+2)*(3-4)^((2*3)^3*2)");
+        test_expr_eval_on_string(some_string, 3.0);
         end_test("expr_eval");
     }
 }
