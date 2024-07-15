@@ -317,7 +317,18 @@ impl Lexer {
                 }
                 x if x.is_numeric() => {
                     let mut temp = x.to_string();
-                    while let Some(next_char) = self.next_char_if(|x| x.is_numeric()) {
+                    let dec_sep = '.';
+                    let mut found_dec_sep = false;
+                    while let Some(next_char) =
+                        self.next_char_if(|x| x.is_numeric() || x == dec_sep)
+                    {
+                        if next_char == dec_sep {
+                            if found_dec_sep {
+                                todo!("implement error handling")
+                            } else {
+                                found_dec_sep = true;
+                            }
+                        }
                         temp.push(next_char)
                     }
                     Some(Token {
