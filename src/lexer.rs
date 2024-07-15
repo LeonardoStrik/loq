@@ -1,4 +1,5 @@
 use std::fmt;
+use std::mem::discriminant;
 use std::string::String;
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -180,7 +181,7 @@ impl Expr {
                     right: Box::new(right.eval()),
                 }
             }
-            Expr::Fun { name: _, args: _ } => todo!("evaluate function"),
+            Expr::Fun { name: _, args: _ } => self.clone(),
             Expr::Numeric(_) => self.clone(),
             Expr::Variable(_) => self.clone(),
         }
@@ -200,7 +201,17 @@ impl fmt::Display for Expr {
                 left,
                 right,
             } => write!(f, "({}{}{})", left, op_kind, right),
-            Expr::Fun { name, args } => todo!(),
+            Expr::Fun { name, args } => {
+                let mut args_str = String::new();
+                for arg in args {
+                    args_str.push_str(&arg.to_string());
+                    args_str.push(',');
+                }
+                if !args.is_empty() {
+                    args_str.pop();
+                }
+                write!(f, "{}({})", name, args_str)
+            }
             Expr::Numeric(value) => write!(f, "{}", value),
             Expr::Variable(name) => write!(f, "{}", name),
         }
@@ -375,11 +386,14 @@ impl Parser {
         }
     }
     fn parse_operand(&mut self) -> Option<Expr> {
-        if let Some(token) = self.lexer.next_token() {
+        if let Some(token) = self
+            .lexer
+            .expect_token_kinds(&vec![&[TokenKind::OpenParen], TokenKind::OPERANDS].concat())
+        {
             match token.kind {
                 TokenKind::Ident => Some(Expr::Variable(token.value)),
                 TokenKind::NumLit => Some(Expr::Numeric(token.to_value())),
-                TokenKind::OpenParen => self.parse(),
+                TokenKind::OpenParen => self.parse(false),
                 _ => None,
             }
         } else {
@@ -472,20 +486,52 @@ impl Parser {
         }
         None
     }
-    fn parse_functor(&mut self, name: Expr) -> Option<Expr> {
-        todo!()
+    fn parse_functor(&mut self, name: String) -> Option<Expr> {
+        let _ = self.lexer.expect_token_kinds(&[TokenKind::OpenParen])?;
+        let mut args = vec![];
+        while let Some(_) = self.lexer.peek_token() {
+            if let Some(arg) = self.parse(true) {
+                args.push(arg);
+            } else {
+                return Some(Expr::Fun { name, args });
+            }
+        }
+        None
     }
-    pub fn parse(&mut self) -> Option<Expr> {
+    pub fn parse(&mut self, parsing_args: bool) -> Option<Expr> {
         while let Some(peek_token) = self.lexer.peek_token() {
             match peek_token.kind {
                 TokenKind::OpenParen => {
+                    if let Some(stashed_expr) = self.stash.pop() {
+                        {
+                            match stashed_expr {
+                                Expr::Numeric(_) => todo!("implement implicit differentiation"),
+                                Expr::Variable(name) => {
+                                    return self.parse_functor(name);
+                                }
+                                _ => todo!("error handling"),
+                            }
+                        }
+                    }
                     self.lexer.drop_token();
-                    let result = self.parse().expect("expected expression after open paren");
+                    let result = self
+                        .parse(false)
+                        .expect("expected expression after open paren");
                     self.stash.push(result)
                 }
                 TokenKind::CloseParen => {
-                    self.lexer.drop_token();
+                    if !parsing_args {
+                        self.lexer.drop_token();
+                    }
                     return self.stash.pop();
+                }
+                TokenKind::Comma => {
+                    if parsing_args {
+                        self.lexer.drop_token();
+                        return self.stash.pop();
+                    } else {
+                        return None;
+                    }
                 }
                 TokenKind::Ident | TokenKind::NumLit => {
                     let mut expr = self
@@ -564,7 +610,7 @@ mod tests {
         start_test("parser");
         fn test_parser_on_string(input: String) {
             let mut parser = Parser::from_string(input);
-            let expr = parser.parse().unwrap();
+            let expr = parser.parse(false).unwrap();
             println!("{}", expr);
             println!("{:#?}", expr);
         }
@@ -589,7 +635,7 @@ mod tests {
 
         fn test_expr_eval_on_string(input: String, expected: f64) {
             let mut parser = Parser::from_string(input);
-            let expr = parser.parse().expect("failed to parse expression");
+            let expr = parser.parse(false).expect("failed to parse expression");
             let val = expr.eval().expect_val("could not evaluate expr");
             println!("{} evaluated to {}", expr, val);
 
@@ -631,5 +677,20 @@ mod tests {
         let some_string = String::from("(1+2)*(3-4)^((2*3)^3*2)");
         test_expr_eval_on_string(some_string, 3.0);
         end_test("expr_eval");
+    }
+    #[test]
+    fn test_functor_parsing() {
+        start_test("functor parsing");
+        fn test_functor_parsing_on_str(input: &str) {
+            let mut parser = Parser::from_string(input.to_string());
+            let expr = parser.parse(false).expect("failed to parse expression");
+            println!("input: {} Evaluated to: {}", input, expr)
+        }
+        test_functor_parsing_on_str("f(1,2,3)");
+        test_functor_parsing_on_str("g(a,b,c)");
+        test_functor_parsing_on_str("f(1,a,3)");
+        test_functor_parsing_on_str("f(1,g(2))");
+        // test_functor_parsing_on_str("");
+        end_test("functor parsing");
     }
 }

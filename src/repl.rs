@@ -49,7 +49,7 @@ pub fn repl() -> io::Result<()> {
             // }
             input => {
                 let mut parser = Parser::from_string(input.to_string());
-                match parser.parse() {
+                match parser.parse(false) {
                     Some(expr) => match expr.eval() {
                         Expr::Numeric(val) => println!("  =>value:  {}", val),
                         otherwise => println!("  =>symbolic  {}", otherwise),
