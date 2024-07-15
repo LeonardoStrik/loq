@@ -477,10 +477,12 @@ impl Parser {
                     return self.stash.pop();
                 }
                 TokenKind::Ident | TokenKind::NumLit => {
-                    let left = self
+                    let mut expr = self
                         .parse_operand()
                         .expect("matched Ident on peek but failed to parse expr");
-                    let expr = self.parse_binop(left).expect("Expected binary operator");
+                    if let Some(_) = self.lexer.peek_token() {
+                        expr = self.parse_binop(expr).expect("Expected binary operator");
+                    }
                     self.stash.push(expr);
                 }
                 x if x.is_operator() => {
