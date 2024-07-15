@@ -1,41 +1,62 @@
-use std::io;
-use std::io::Write;
+use crate::lexer::{Expr, Parser};
+use std::io::{self, Stdout};
+use std::io::{Stdin, Write};
 use std::vec::Vec;
-
-fn repl() -> io::Result<()> {
-    let mut buffer = String::new();
-    let mut input = String::new();
-    let mut history: Vec<String> = Vec::new();
-    let stdin = io::stdin();
-    let mut stdout = io::stdout();
-    let mut quit = false;
-
-    while !quit {
-        input.clear();
+struct Env {
+    input: String,
+    history: Vec<String>,
+    stdout: Stdout,
+    stdin: Stdin,
+    quit: bool,
+}
+impl Env {
+    pub fn new() -> Self {
+        Env {
+            input: String::new(),
+            history: Vec::new(),
+            stdin: io::stdin(),
+            stdout: io::stdout(),
+            quit: false,
+        }
+    }
+    pub fn read_input(&mut self) -> io::Result<()> {
+        self.input.clear();
         print!(">  ");
-        stdout.flush()?;
-        stdin.read_line(&mut input)?;
-        input.truncate(input.len() - 2);
-        history.push(input.clone());
-        match input.as_str() {
+        self.stdout.flush()?;
+        self.stdin.read_line(&mut self.input)?;
+        self.input.truncate(self.input.len() - 2);
+        self.history.push(self.input.clone());
+        Ok(())
+    }
+}
+pub fn repl() -> io::Result<()> {
+    let mut env = Env::new();
+
+    while !env.quit {
+        env.read_input()?;
+        match env.input.as_str() {
             "quit;" | "q;" => break,
-            "clear;" | "c;" => {
-                buffer.clear();
-                history.clear();
+            // "clear;" | "c;" => {
+            //     buffer.clear();
+            //     env.history.clear();
+            // }
+            // "undo;" | "u;" => {
+            //     let _ = env.history.pop();
+            //     match env.history.pop() {
+            //         Some(x) => buffer.truncate(buffer.len() - x.len()),
+            //         None => println!("ERROR: Nothing to undo!"),
+            //     };
+            // }
+            input => {
+                let mut parser = Parser::from_string(input.to_string());
+                match parser.parse() {
+                    Some(expr) => match expr.eval() {
+                        Expr::Numeric(val) => println!("  =>value:  {}", val),
+                        otherwise => println!("  =>symbolic  {}", otherwise),
+                    },
+                    None => println!("unable to parse"),
+                }
             }
-            "undo;" | "u;" => {
-                let _ = history.pop();
-                match history.pop() {
-                    Some(x) => buffer.truncate(buffer.len() - x.len()),
-                    None => println!("ERROR: Nothing to undo!"),
-                };
-            }
-            _ => {
-                buffer.push_str(input.as_str());
-            }
-        };
-        if !buffer.is_empty() {
-            println!("  =>  {}", buffer);
         };
     }
     Ok(())

@@ -1,6 +1,5 @@
-use std::env::args;
+use std::fmt;
 use std::string::String;
-use std::{fmt, result};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Loc {
@@ -11,13 +10,18 @@ pub struct Loc {
 #[derive(Debug, Clone, Copy, PartialEq)]
 
 pub enum TokenKind {
+    // TODO: would like to somehow refactor away the need for double definition of operators
+    // `parentheses`
     OpenParen,
     CloseParen,
+    // operators
+    Equals,
     Mult,
     Div,
     Plus,
     Min,
     Pow,
+    // operands
     Ident,
     NumLit,
 }
@@ -45,16 +49,54 @@ impl TokenKind {
     fn is_operand(self) -> bool {
         self.is_in(TokenKind::OPERANDS)
     }
-    fn get_priority(self) -> i32 {
-        match self {
-            TokenKind::Pow => 0,
-            TokenKind::Mult => 1,
-            TokenKind::Div => 1,
-            TokenKind::Plus => 2,
-            TokenKind::Min => 2,
+    fn get_precedence(&self) -> i32 {
+        OperatorKind::from_token_kind(self).get_precedence()
+    }
+}
+#[derive(Debug, Clone, Copy, PartialEq)]
 
-            _ => panic!("requested operator priority on a {:?}", self),
+pub enum OperatorKind {
+    Equals,
+    Mult,
+    Div,
+    Plus,
+    Min,
+    Pow,
+}
+impl OperatorKind {
+    fn get_precedence(self) -> i32 {
+        match self {
+            OperatorKind::Equals => 0,
+            OperatorKind::Pow => 1,
+            OperatorKind::Mult => 2,
+            OperatorKind::Div => 2,
+            OperatorKind::Plus => 3,
+            OperatorKind::Min => 3,
         }
+    }
+    fn from_token_kind(kind: &TokenKind) -> Self {
+        match kind {
+            TokenKind::Equals => Self::Equals,
+            TokenKind::Mult => Self::Mult,
+            TokenKind::Div => Self::Div,
+            TokenKind::Plus => Self::Plus,
+            TokenKind::Min => Self::Min,
+            TokenKind::Pow => Self::Pow,
+            _ => panic!("called OperatorKind::fromt_token_kind on a {:?}", kind),
+        }
+    }
+}
+impl fmt::Display for OperatorKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let output = match self {
+            Self::Mult => "*",
+            Self::Div => "/",
+            Self::Plus => "+",
+            Self::Min => "-",
+            Self::Pow => "^",
+            Self::Equals => "=",
+        };
+        write!(f, "{}", output)
     }
 }
 #[derive(Clone, Debug)]
@@ -63,17 +105,28 @@ pub struct Token {
     value: String,
     pub loc: Loc,
 }
+impl Token {
+    fn to_value(self) -> f64 {
+        match self.kind {
+            TokenKind::NumLit => self
+                .value
+                .parse::<f64>()
+                .expect("failed to parse NumLit in to_value"),
+            _ => panic!("called to_value on a {:?}", self.kind),
+        }
+    }
+}
 impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let output = match &self.kind {
             TokenKind::OpenParen => "(",
             TokenKind::CloseParen => ")",
-
             TokenKind::Mult => "*",
             TokenKind::Div => "/",
             TokenKind::Plus => "+",
             TokenKind::Min => "-",
             TokenKind::Pow => "^",
+            TokenKind::Equals => "=",
             TokenKind::Ident => &self.value.as_str(),
             TokenKind::NumLit => &self.value.as_str(),
         };
@@ -81,54 +134,58 @@ impl fmt::Display for Token {
         write!(f, "{}", output)
     }
 }
+
 #[derive(Debug, Clone)]
 pub enum Expr {
+    // TODO: Implement a way to somehow store parens, useful for: partial evaluation of symbolics, more readable printing
+    // TODO: decouple Exprs from tokens to simplify evaluation? feels like a cleaner way to represent an Expr anyway, if you were to store/use them then the old Token info is not relevant anyway
     BinOp {
-        op_kind: TokenKind,
+        op_kind: OperatorKind,
         left: Box<Expr>,
         right: Box<Expr>,
     },
     Fun {
-        functor: Token,
+        name: String,
         args: Vec<Expr>,
     },
-    Value {
-        token: Token,
-    },
-    Variable {
-        token: Token,
-    },
+    Numeric(f64),
+    Variable(String),
 }
 impl Expr {
-    pub fn eval(&self) -> Option<f64> {
+    pub fn eval(&self) -> Expr {
         match self {
             Expr::BinOp {
                 op_kind,
                 left,
                 right,
             } => {
-                let a = left.eval().unwrap();
-                let b = right.eval().unwrap();
-                match op_kind {
-                    TokenKind::Mult => Some(a * b),
-                    TokenKind::Div => Some(a / b),
-                    TokenKind::Plus => Some(a + b),
-                    TokenKind::Min => Some(a - b),
-                    TokenKind::Pow => Some(a.powf(b)),
-                    _ => None,
+                if let Expr::Numeric(a) = left.eval() {
+                    if let Expr::Numeric(b) = right.eval() {
+                        return match op_kind {
+                            OperatorKind::Mult => Expr::Numeric(a * b),
+                            OperatorKind::Div => Expr::Numeric(a / b),
+                            OperatorKind::Plus => Expr::Numeric(a + b),
+                            OperatorKind::Min => Expr::Numeric(a - b),
+                            OperatorKind::Pow => Expr::Numeric(a.powf(b)),
+                            _ => panic!("not all operators handled"),
+                        };
+                    }
+                }
+                Expr::BinOp {
+                    op_kind: *op_kind,
+                    left: Box::new(left.eval()),
+                    right: Box::new(right.eval()),
                 }
             }
-            Expr::Fun {
-                functor: _,
-                args: _,
-            } => todo!("evaluate function"),
-            Expr::Value { token } => Some(
-                token
-                    .value
-                    .parse::<f64>()
-                    .expect("failed parsing NumLit to f64"),
-            ),
-            Expr::Variable { token: _ } => todo!("evaluate variables"),
+            Expr::Fun { name: _, args: _ } => todo!("evaluate function"),
+            Expr::Numeric(_) => self.clone(),
+            Expr::Variable(_) => self.clone(),
+        }
+    }
+    pub fn expect_val(&self, msg: &str) -> f64 {
+        match self {
+            Expr::Numeric(val) => *val,
+            _ => panic!("{}", msg),
         }
     }
 }
@@ -139,19 +196,10 @@ impl fmt::Display for Expr {
                 op_kind,
                 left,
                 right,
-            } => write!(
-                f,
-                "({}{}{})",
-                left,
-                Token {
-                    kind: *op_kind,
-                    value: String::new(),
-                    loc: Loc::default()
-                },
-                right
-            ),
-            Expr::Fun { functor, args } => todo!(),
-            Expr::Value { token } | Expr::Variable { token } => write!(f, "{}", token.value),
+            } => write!(f, "({}{}{})", left, op_kind, right),
+            Expr::Fun { name, args } => todo!(),
+            Expr::Numeric(value) => write!(f, "{}", value),
+            Expr::Variable(name) => write!(f, "{}", name),
         }
     }
 }
@@ -310,8 +358,8 @@ impl Parser {
     fn parse_operand(&mut self) -> Option<Expr> {
         if let Some(token) = self.lexer.next_token() {
             match token.kind {
-                TokenKind::Ident => Some(Expr::Variable { token }),
-                TokenKind::NumLit => Some(Expr::Value { token }),
+                TokenKind::Ident => Some(Expr::Variable(token.value)),
+                TokenKind::NumLit => Some(Expr::Numeric(token.to_value())),
                 TokenKind::OpenParen => self.parse(),
                 _ => None,
             }
@@ -321,29 +369,29 @@ impl Parser {
     }
     fn parse_binop(&mut self, left: Expr) -> Option<Expr> {
         // TODO: Somehow refactor this to eliminate hella copy-pasting in checking whether to parse next expression or not
+        // TODO: implement some kind of checking whether the complete expression was parsed, expecially due to hanging parens, e.g. "1+2)*3" yields 3
         if let Some(operator) = self.lexer.expect_token_kinds(TokenKind::OPERATORS) {
-            // let current_prio = current_prio.unwrap_or(operator.kind.get_priority());
             if let Some(right) = self.parse_operand() {
                 while let Some(token) = self.lexer.peek_token() {
                     match token.kind {
                         TokenKind::CloseParen => match self.stash.pop() {
                             Some(right_expr) => {
                                 return Some(Expr::BinOp {
-                                    op_kind: operator.kind,
+                                    op_kind: OperatorKind::from_token_kind(&operator.kind),
                                     left: Box::new(left),
                                     right: Box::new(right_expr),
                                 });
                             }
                             None => {
                                 return Some(Expr::BinOp {
-                                    op_kind: operator.kind,
+                                    op_kind: OperatorKind::from_token_kind(&operator.kind),
                                     left: Box::new(left),
                                     right: Box::new(right),
                                 });
                             }
                         },
                         x if x.is_operator() => {
-                            if x.get_priority() < operator.kind.get_priority() {
+                            if x.get_precedence() < operator.kind.get_precedence() {
                                 match self.stash.pop() {
                                     Some(prev_expr) => {
                                         let temp_right = self.parse_binop(prev_expr).unwrap();
@@ -359,14 +407,18 @@ impl Parser {
                                     match self.stash.pop() {
                                         Some(right_expr) => {
                                             return Some(Expr::BinOp {
-                                                op_kind: operator.kind,
+                                                op_kind: OperatorKind::from_token_kind(
+                                                    &operator.kind,
+                                                ),
                                                 left: Box::new(left),
                                                 right: Box::new(right_expr),
                                             });
                                         }
                                         None => {
                                             return Some(Expr::BinOp {
-                                                op_kind: operator.kind,
+                                                op_kind: OperatorKind::from_token_kind(
+                                                    &operator.kind,
+                                                ),
                                                 left: Box::new(left),
                                                 right: Box::new(right),
                                             });
@@ -384,14 +436,14 @@ impl Parser {
                 match self.stash.pop() {
                     Some(right_expr) => {
                         return Some(Expr::BinOp {
-                            op_kind: operator.kind,
+                            op_kind: OperatorKind::from_token_kind(&operator.kind),
                             left: Box::new(left),
                             right: Box::new(right_expr),
                         });
                     }
                     None => {
                         return Some(Expr::BinOp {
-                            op_kind: operator.kind,
+                            op_kind: OperatorKind::from_token_kind(&operator.kind),
                             left: Box::new(left),
                             right: Box::new(right),
                         });
@@ -517,7 +569,7 @@ mod tests {
         fn test_expr_eval_on_string(input: String, expected: f64) {
             let mut parser = Parser::from_string(input);
             let expr = parser.parse().expect("failed to parse expression");
-            let val = expr.eval().expect("could not evaluate expr");
+            let val = expr.eval().expect_val("could not evaluate expr");
             println!("{} evaluated to {}", expr, val);
 
             assert_eq!(
