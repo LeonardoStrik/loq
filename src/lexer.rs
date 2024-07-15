@@ -14,6 +14,8 @@ pub enum TokenKind {
     // `parentheses`
     OpenParen,
     CloseParen,
+    //separators
+    Comma,
     // operators
     Equals,
     Mult,
@@ -121,6 +123,7 @@ impl fmt::Display for Token {
         let output = match &self.kind {
             TokenKind::OpenParen => "(",
             TokenKind::CloseParen => ")",
+            TokenKind::Comma => ",",
             TokenKind::Mult => "*",
             TokenKind::Div => "/",
             TokenKind::Plus => "+",
@@ -277,6 +280,11 @@ impl Lexer {
                     kind: TokenKind::CloseParen,
                     loc: current_loc,
                     value: ")".to_string(),
+                }),
+                ',' => Some(Token {
+                    kind: TokenKind::Comma,
+                    loc: current_loc,
+                    value: ",".to_string(),
                 }),
                 '+' => Some(Token {
                     kind: TokenKind::Plus,
@@ -464,6 +472,9 @@ impl Parser {
         }
         None
     }
+    fn parse_functor(&mut self, name: Expr) -> Option<Expr> {
+        todo!()
+    }
     pub fn parse(&mut self) -> Option<Expr> {
         while let Some(peek_token) = self.lexer.peek_token() {
             match peek_token.kind {
@@ -479,10 +490,7 @@ impl Parser {
                 TokenKind::Ident | TokenKind::NumLit => {
                     let mut expr = self
                         .parse_operand()
-                        .expect("matched Ident on peek but failed to parse expr");
-                    if let Some(_) = self.lexer.peek_token() {
-                        expr = self.parse_binop(expr).expect("Expected binary operator");
-                    }
+                        .expect("matched Ident or NumLit on peek but failed to parse expr");
                     self.stash.push(expr);
                 }
                 x if x.is_operator() => {
@@ -592,6 +600,10 @@ mod tests {
             );
         }
 
+        let some_string = String::from("123456");
+        test_expr_eval_on_string(some_string, 123456.0);
+        let some_string = String::from("123.456");
+        test_expr_eval_on_string(some_string, 123.456);
         let some_string = String::from("123+456");
         test_expr_eval_on_string(some_string, 579.0);
         let some_string = String::from("123-456");
