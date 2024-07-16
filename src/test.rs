@@ -25,10 +25,16 @@ mod tests {
 
         fn assert_token_kind(lexer: &mut Lexer, kind: TokenKind) {
             assert_eq!(
-                (&lexer.expect_token_kinds(&[kind.clone()]).unwrap().kind),
+                (&lexer
+                    .expect_token_kinds(&[kind.clone()], "while testing".to_string())
+                    .unwrap()
+                    .kind),
                 (&kind),
                 "Expected{:?} but got {:?}",
-                lexer.expect_token_kinds(&[kind.clone()]).unwrap().kind,
+                lexer
+                    .expect_token_kinds(&[kind.clone()], "while testing".to_string())
+                    .unwrap()
+                    .kind,
                 kind
             );
         }
@@ -44,7 +50,10 @@ mod tests {
         assert_token_kind(&mut lexer, TokenKind::Min);
         assert_eq!(
             lexer
-                .expect_token_kinds(&[TokenKind::OPERANDS, &[TokenKind::OpenParen]].concat())
+                .expect_token_kinds(
+                    &[TokenKind::OPERANDS, &[TokenKind::OpenParen]].concat(),
+                    "while testing".to_string()
+                )
                 .unwrap()
                 .kind,
             TokenKind::Ident
@@ -59,7 +68,7 @@ mod tests {
         start_test("parser");
         fn test_parser_on_string(input: &str) {
             let mut parser = Parser::from_string(input.to_string());
-            let expr = parser.parse(false).unwrap();
+            let expr = parser.parse().unwrap();
             println!("{}", expr);
             println!("{:#?}", expr);
         }
@@ -80,7 +89,7 @@ mod tests {
 
         fn test_expr_eval_on_string(input: &str, expected: f64) {
             let mut parser = Parser::from_string(input.to_string());
-            let expr = parser.parse(false).expect("failed to parse expression");
+            let expr = parser.parse().expect("failed to parse expression");
             let mut env = HashMap::new();
             let val = expr.eval(&mut env).expect_val("could not evaluate expr");
             println!("{} evaluated to {}", expr, val);
@@ -114,7 +123,7 @@ mod tests {
         start_test("functor parsing");
         fn test_functor_parsing_on_str(input: &str) {
             let mut parser = Parser::from_string(input.to_string());
-            let expr = parser.parse(false).expect("failed to parse expression");
+            let expr = parser.parse().expect("failed to parse expression");
             println!("input: {} Evaluated to: {}", input, expr)
         }
         test_functor_parsing_on_str("f(1,2,3)");
@@ -135,7 +144,7 @@ mod tests {
             expected: Option<f64>,
         ) {
             let mut parser = Parser::from_string(input.to_string());
-            let expr = parser.parse(false).expect("failed to parse expression");
+            let expr = parser.parse().expect("failed to parse expression");
             let val = expr.eval(env);
             println!("{} evaluated to {}", expr, val);
             if let Some(expected) = expected {

@@ -53,7 +53,7 @@ pub fn repl() -> io::Result<()> {
             // }
             input => {
                 let mut parser = Parser::from_string(input.to_string());
-                if let Some(expr) = parser.parse(false) {
+                if let Some(expr) = parser.parse() {
                     match expr.eval(&mut env.eval_env) {
                         Expr::Numeric(val) => println!("  =>value:  {}", val),
                         otherwise => println!("  =>symbolic  {}", otherwise),

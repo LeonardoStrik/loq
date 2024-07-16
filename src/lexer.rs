@@ -1,17 +1,28 @@
 use std::fmt;
 use std::string::String;
 
+use crate::diag::ParserError;
 use crate::{
-    diag::{Diagnoster, LogLevel},
+    diag::Diagnoster,
     expr::{Expr, OperatorKind},
 };
 
-#[derive(Debug, Clone, Copy, Default)]
-pub struct Loc {
-    pub ln: i32,
-    pub col: i32,
+#[derive(Debug, Clone)]
+pub enum Loc {
+    Repl { line: String, idx: i32 },
+    File { ln: i32, col: i32 },
 }
-
+impl Loc {
+    fn increment(&mut self) {
+        *self = match self {
+            Loc::Repl { line, idx } => Loc::Repl {
+                line: line.to_string(),
+                idx: *idx + 1,
+            },
+            Loc::File { ln: _, col: _ } => todo!(),
+        }
+    }
+}
 #[derive(Debug, Clone, Copy, PartialEq)]
 
 pub enum TokenKind {
@@ -118,23 +129,24 @@ pub struct Lexer {
     is_empty: bool,
     diag: Diagnoster,
 }
-impl Iterator for Lexer {
-    type Item = Token;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        self.next_token()
-    }
-}
 impl Lexer {
     pub fn from_string(input: String) -> Self {
         Lexer {
             chars: input.chars().collect(),
             counter: 0,
-            current_loc: Loc { ln: 0, col: -1 },
+            current_loc: Loc::Repl {
+                line: input.chars().collect(),
+                idx: -1,
+            },
             peeked_token: None,
             is_empty: false,
             diag: Diagnoster {},
         }
+    }
+    fn increment(&mut self) {
+        self.counter += 1;
+        self.current_loc.increment()
     }
     fn peek_char(&mut self) -> Option<char> {
         if let Some(result) = self.chars.get(self.counter) {
@@ -145,10 +157,13 @@ impl Lexer {
     }
     fn next_char(&mut self) -> Option<char> {
         if let Some(result) = self.peek_char() {
-            self.counter += 1;
-            self.current_loc.col += 1;
+            self.increment();
+            if let None = self.peek_char() {
+                self.is_empty = true;
+            }
             Some(result)
         } else {
+            self.is_empty = true;
             None
         }
     }
@@ -252,8 +267,11 @@ impl Lexer {
                         }
                         temp.push(next_char)
                     }
-                    if let Some(_) = self.next_char_if(|x| x.is_alphabetic()) {
-                        self.diag.report(LogLevel::Error, "variables must begin with an alphabetic character, but may contain numbers afterwards");
+                    if let Some(next_char) = self.next_char_if(|x| x.is_alphabetic()) {
+                        self.diag.report(ParserError::UnexpectedChar {
+                            char: next_char,
+                            loc: current_loc,
+                        });
                         return None;
                     }
                     Some(Token {
@@ -263,42 +281,33 @@ impl Lexer {
                     })
                 }
                 otherwise => {
-                    self.diag.report(
-                        LogLevel::Error,
-                        &format!("unrecognized token {}", otherwise),
-                    );
+                    self.diag.report(ParserError::UnexpectedChar {
+                        char: otherwise,
+                        loc: current_loc,
+                    });
                     None
                 }
             };
         }
         None
     }
-    pub fn expect_token_kinds(&mut self, expected: &[TokenKind]) -> Option<Token> {
+    pub fn expect_token_kinds(
+        &mut self,
+        expected: &[TokenKind],
+        while_doing: String,
+    ) -> Option<Token> {
         if let Some(token) = self.peek_token() {
             if token.kind.is_in(expected) {
                 return self.next_token();
             }
         }
-        let mut msg = String::from("Expected ");
-        if expected.len() > 1 {
-            msg.push_str("either ")
-        }
-        for (i, kind) in expected.iter().enumerate() {
-            msg.push_str(&kind.to_string());
-            if expected.len() > 1 {
-                if i < expected.len() - 2 {
-                    msg.push_str(", ");
-                } else if i == expected.len() - 2 {
-                    msg.push_str(" or ")
-                }
-            }
-        }
-        if let Some(token) = self.peek_token() {
-            msg.push_str(&format!(". Found {} instead", token));
-        } else {
-            msg.push_str(". Found nothing instead");
-        }
-        self.diag.report(LogLevel::Error, &msg);
+        let found = self.peek_token();
+        self.diag.report(ParserError::ExpectedToken {
+            expected: expected.to_vec(),
+            found,
+            while_doing,
+            loc: self.current_loc.clone(),
+        });
         None
     }
     fn drop_token(&mut self) {
@@ -320,16 +329,19 @@ impl Parser {
         }
     }
     fn parse_operand(&mut self) -> Option<Expr> {
-        if let Some(token) = self
-            .lexer
-            .expect_token_kinds(&vec![&[TokenKind::OpenParen], TokenKind::OPERANDS].concat())
-        {
+        if let Some(token) = self.lexer.expect_token_kinds(
+            &vec![&[TokenKind::OpenParen], TokenKind::OPERANDS].concat(),
+            "while parsing operand".to_string(),
+        ) {
             match token.kind {
                 TokenKind::Ident => Some(Expr::Variable(token.value)),
                 TokenKind::NumLit => Some(Expr::Numeric(token.to_value())),
                 TokenKind::OpenParen => {
-                    let operand = self.parse(false);
-                    let _ = self.lexer.expect_token_kinds(&[TokenKind::CloseParen]);
+                    let operand = self.parse_impl(false);
+                    let _ = self.lexer.expect_token_kinds(
+                        &[TokenKind::CloseParen],
+                        "while parsing expression between parentheses".to_string(),
+                    );
                     operand
                 }
                 _ => None,
@@ -341,7 +353,10 @@ impl Parser {
     fn parse_binop(&mut self, left: Expr) -> Option<Expr> {
         // TODO: Somehow refactor this to eliminate hella copy-pasting in checking whether to parse next expression or not
         // TODO: implement some kind of checking whether the complete expression was parsed, expecially due to hanging parens, e.g. "1+2)*3" yields 3
-        if let Some(operator) = self.lexer.expect_token_kinds(TokenKind::OPERATORS) {
+        if let Some(operator) = self.lexer.expect_token_kinds(
+            TokenKind::OPERATORS,
+            "while parsing binary operator".to_string(),
+        ) {
             if let Some(right) = self.parse_operand() {
                 while let Some(token) = self.lexer.peek_token() {
                     match token.kind {
@@ -398,9 +413,13 @@ impl Parser {
                                 }
                             }
                         }
+
                         _ => {
-                            println!("panicked on token {}", token);
-                            panic!("expected an operator or bracket after an operand")
+                            self.diag.report(ParserError::UnexpectedToken {
+                                found: token,
+                                while_doing: "while parsing binary operator".to_string(),
+                            });
+                            return None;
                         }
                     }
                 }
@@ -425,14 +444,17 @@ impl Parser {
         None
     }
     fn parse_functor(&mut self, name: String) -> Option<Expr> {
-        let _ = self.lexer.expect_token_kinds(&[TokenKind::OpenParen])?;
+        let _ = self
+            .lexer
+            .expect_token_kinds(&[TokenKind::OpenParen], "while parsing functor".to_string())?;
         let mut args = vec![];
         while let Some(_) = self.lexer.peek_token() {
-            if let Some(arg) = self.parse(true) {
+            if let Some(arg) = self.parse_impl(true) {
                 args.push(arg);
-                let token = self
-                    .lexer
-                    .expect_token_kinds(&[TokenKind::CloseParen, TokenKind::Comma])?;
+                let token = self.lexer.expect_token_kinds(
+                    &[TokenKind::CloseParen, TokenKind::Comma],
+                    "while parsing functor".to_string(),
+                )?;
                 match token.kind {
                     TokenKind::CloseParen => return Some(Expr::Fun { name, args }),
                     TokenKind::Comma => continue,
@@ -444,7 +466,15 @@ impl Parser {
         }
         None
     }
-    pub fn parse(&mut self, parsing_args: bool) -> Option<Expr> {
+    pub fn parse(&mut self) -> Option<Expr> {
+        if let Some(result) = self.parse_impl(false) {
+            if self.lexer.is_empty {
+                return Some(result);
+            }
+        }
+        None
+    }
+    fn parse_impl(&mut self, parsing_args: bool) -> Option<Expr> {
         while let Some(peek_token) = self.lexer.peek_token() {
             match peek_token.kind {
                 TokenKind::OpenParen => {
@@ -454,29 +484,26 @@ impl Parser {
                                 Expr::Variable(name) => {
                                     return self.parse_functor(name);
                                 }
-                                Expr::Numeric(_) => {
-                                    self.diag.report(
-                                        LogLevel::Error,
-                                        &format!("implicit differentiation not yet supported"),
-                                    );
-                                    return None;
-                                }
+
                                 _ => {
-                                    self.diag.report(
-                                        LogLevel::Error,
-                                        &format!(
-                                            "Expected an Ident before an Open paren, found {} ",
+                                    self.diag.report(ParserError::UnexpectedToken {
+                                        found: peek_token,
+                                        while_doing: format!(
+                                            "parsing expression after {}",
                                             stashed_expr
                                         ),
-                                    );
+                                    });
                                     return None;
                                 }
                             }
                         }
                     }
                     self.lexer.drop_token();
-                    let result = self.parse(false)?;
-                    let _ = self.lexer.expect_token_kinds(&[TokenKind::CloseParen])?;
+                    let result = self.parse_impl(false)?;
+                    let _ = self.lexer.expect_token_kinds(
+                        &[TokenKind::CloseParen],
+                        "while parsing expression between parens".to_string(),
+                    )?;
                     self.stash.push(result)
                 }
                 TokenKind::CloseParen => {
@@ -486,8 +513,10 @@ impl Parser {
                     if parsing_args {
                         return self.stash.pop();
                     } else {
-                        self.diag
-                            .report(LogLevel::Error, "Found comma while not parsing args.");
+                        self.diag.report(ParserError::UnexpectedToken {
+                            found: peek_token,
+                            while_doing: "not parsing args".to_string(),
+                        });
                         return None;
                     }
                 }
@@ -500,7 +529,18 @@ impl Parser {
                     let expr = self.parse_binop(left)?;
                     self.stash.push(expr)
                 }
-                _ => panic!("panicked on token {}", peek_token),
+                _ => {
+                    let msg = match parsing_args {
+                        true => "parsing function arguments",
+                        false => "parsing",
+                    }
+                    .to_string();
+                    self.diag.report(ParserError::UnexpectedToken {
+                        found: peek_token,
+                        while_doing: msg,
+                    });
+                    return None;
+                }
             }
         }
         self.stash.pop()
