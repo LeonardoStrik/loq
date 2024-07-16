@@ -1,4 +1,5 @@
-use crate::lexer::{Expr, Parser};
+use crate::expr::Expr;
+use crate::lexer::Parser;
 use std::collections::HashMap;
 use std::io::{self, Stdout};
 use std::io::{Stdin, Write};

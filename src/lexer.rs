@@ -1,6 +1,7 @@
-use std::collections::HashMap;
 use std::fmt;
 use std::string::String;
+
+use crate::expr::{Expr, OperatorKind};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Loc {
@@ -30,7 +31,7 @@ pub enum TokenKind {
 }
 
 impl TokenKind {
-    const OPERATORS: &'static [TokenKind] = &[
+    pub const OPERATORS: &'static [TokenKind] = &[
         TokenKind::Mult,
         TokenKind::Div,
         TokenKind::Plus,
@@ -38,7 +39,7 @@ impl TokenKind {
         TokenKind::Pow,
         TokenKind::Equals,
     ];
-    const OPERANDS: &'static [TokenKind] = &[TokenKind::Ident, TokenKind::NumLit];
+    pub const OPERANDS: &'static [TokenKind] = &[TokenKind::Ident, TokenKind::NumLit];
     fn is_in(self, expected: &[TokenKind]) -> bool {
         for kind in expected {
             if (*kind) == (self) {
@@ -57,52 +58,7 @@ impl TokenKind {
         OperatorKind::from_token_kind(self).get_precedence()
     }
 }
-#[derive(Debug, Clone, Copy, PartialEq)]
 
-pub enum OperatorKind {
-    Equals,
-    Mult,
-    Div,
-    Plus,
-    Min,
-    Pow,
-}
-impl OperatorKind {
-    fn get_precedence(self) -> i32 {
-        match self {
-            OperatorKind::Pow => 0,
-            OperatorKind::Mult => 1,
-            OperatorKind::Div => 1,
-            OperatorKind::Plus => 2,
-            OperatorKind::Min => 2,
-            OperatorKind::Equals => 3,
-        }
-    }
-    fn from_token_kind(kind: &TokenKind) -> Self {
-        match kind {
-            TokenKind::Equals => Self::Equals,
-            TokenKind::Mult => Self::Mult,
-            TokenKind::Div => Self::Div,
-            TokenKind::Plus => Self::Plus,
-            TokenKind::Min => Self::Min,
-            TokenKind::Pow => Self::Pow,
-            _ => panic!("called OperatorKind::fromt_token_kind on a {:?}", kind),
-        }
-    }
-}
-impl fmt::Display for OperatorKind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let output = match self {
-            Self::Mult => "*",
-            Self::Div => "/",
-            Self::Plus => "+",
-            Self::Min => "-",
-            Self::Pow => "^",
-            Self::Equals => "=",
-        };
-        write!(f, "{}", output)
-    }
-}
 #[derive(Clone, Debug)]
 pub struct Token {
     pub kind: TokenKind,
@@ -137,150 +93,6 @@ impl fmt::Display for Token {
         };
 
         write!(f, "{}", output)
-    }
-}
-#[derive(Debug, Clone)]
-pub enum Expr {
-    // TODO: Implement a way to somehow store parens, useful for: partial evaluation of symbolics, more readable printing
-    // TODO: decouple Exprs from tokens to simplify evaluation? feels like a cleaner way to represent an Expr anyway, if you were to store/use them then the old Token info is not relevant anyway
-    BinOp {
-        op_kind: OperatorKind,
-        left: Box<Expr>,
-        right: Box<Expr>,
-    },
-    Fun {
-        name: String,
-        args: Vec<Expr>,
-    },
-    Numeric(f64),
-    Variable(String),
-}
-impl Expr {
-    pub fn eval(&self, env: &mut HashMap<String, Box<Expr>>) -> Expr {
-        // top-level entrypoint for evaluation, can insert variable declarations etc
-        // this calls eval_recursive for further (non-mutable env) evaluation
-        match self {
-            Expr::BinOp {
-                op_kind,
-                left,
-                right,
-            } => {
-                if *op_kind == OperatorKind::Equals && left.is_var() {
-                    let val = Box::new(right.eval_recursive(env));
-                    env.insert(
-                        left.expect_name("expected name on is_var == true").clone(),
-                        val.clone(),
-                    );
-                    Expr::BinOp {
-                        op_kind: *op_kind,
-                        left: left.clone(),
-                        right: val,
-                    }
-                } else {
-                    self.eval_recursive(env)
-                }
-            }
-            Expr::Variable(name) => {
-                if let Some(val) = env.get(name) {
-                    *val.clone()
-                } else {
-                    self.eval_recursive(env)
-                }
-            }
-            _ => self.eval_recursive(env),
-        }
-    }
-    fn eval_recursive(&self, env: &HashMap<String, Box<Expr>>) -> Expr {
-        // evaluates expressions without evaluating equalities, therefore does not need a mut env
-        match self {
-            Expr::BinOp {
-                op_kind,
-                left,
-                right,
-            } => {
-                let a = left.eval_recursive(env);
-                let b = right.eval_recursive(env);
-                if a.is_num() && b.is_num() {
-                    let a = a.expect_val("expect val on is_num==true");
-                    let b = b.expect_val("expect val on is_num==true");
-                    return match op_kind {
-                        OperatorKind::Mult => Expr::Numeric(a * b),
-                        OperatorKind::Div => Expr::Numeric(a / b),
-                        OperatorKind::Plus => Expr::Numeric(a + b),
-                        OperatorKind::Min => Expr::Numeric(a - b),
-                        OperatorKind::Pow => Expr::Numeric(a.powf(b)),
-                        OperatorKind::Equals => Expr::BinOp {
-                            op_kind: *op_kind,
-                            left: Box::new(left.eval_recursive(env)),
-                            right: Box::new(right.eval_recursive(env)),
-                        },
-                    };
-                }
-
-                Expr::BinOp {
-                    op_kind: *op_kind,
-                    left: Box::new(left.eval_recursive(env)),
-                    right: Box::new(right.eval_recursive(env)),
-                }
-            }
-            Expr::Fun { name: _, args: _ } => self.clone(),
-            Expr::Numeric(_) => self.clone(),
-            Expr::Variable(name) => {
-                if let Some(val) = env.get(name) {
-                    *val.clone()
-                } else {
-                    self.clone()
-                }
-            }
-        }
-    }
-    pub fn expect_val(&self, msg: &str) -> f64 {
-        match self {
-            Expr::Numeric(val) => *val,
-            _ => panic!("{}", msg),
-        }
-    }
-    pub fn expect_name(&self, msg: &str) -> &String {
-        match self {
-            Expr::Variable(name) => name,
-            _ => panic!("{}", msg),
-        }
-    }
-    pub fn is_num(&self) -> bool {
-        match self {
-            Expr::Numeric(_) => true,
-            _ => false,
-        }
-    }
-    pub fn is_var(&self) -> bool {
-        match self {
-            Expr::Variable(_) => true,
-            _ => false,
-        }
-    }
-}
-impl fmt::Display for Expr {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Expr::BinOp {
-                op_kind,
-                left,
-                right,
-            } => write!(f, "({}{}{})", left, op_kind, right),
-            Expr::Fun { name, args } => {
-                let mut args_str = String::new();
-                for arg in args {
-                    args_str.push_str(&arg.to_string());
-                    args_str.push(',');
-                }
-                if !args.is_empty() {
-                    args_str.pop();
-                }
-                write!(f, "{}({})", name, args_str)
-            }
-            Expr::Numeric(value) => write!(f, "{}", value),
-            Expr::Variable(name) => write!(f, "{}", name),
-        }
     }
 }
 
@@ -432,7 +244,7 @@ impl Lexer {
         }
         None
     }
-    fn expect_token_kinds(&mut self, expected: &[TokenKind]) -> Option<Token> {
+    pub fn expect_token_kinds(&mut self, expected: &[TokenKind]) -> Option<Token> {
         if let Some(token) = self.peek_token() {
             if token.kind.is_in(expected) {
                 return self.next_token();
@@ -624,158 +436,5 @@ impl Parser {
             }
         }
         self.stash.pop()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    fn start_test(name: &str) {
-        println!("--------------------------------------------");
-        println!("start {} test", name);
-        println!("--------------------------------------------");
-    }
-    fn end_test(name: &str) {
-        println!("--------------------------------------------");
-        println!("end {} test", name);
-        println!("--------------------------------------------");
-    }
-    #[test]
-    fn test_expect_token_kinds() {
-        start_test("expect_token_kinds");
-        let some_string = String::from("(abc+1234*c)^/-abcd=");
-        let mut lexer = Lexer::from_string(some_string);
-
-        fn assert_token_kind(lexer: &mut Lexer, kind: TokenKind) {
-            assert_eq!(
-                (&lexer.expect_token_kinds(&[kind.clone()]).unwrap().kind),
-                (&kind),
-                "Expected{:?} but got {:?}",
-                lexer.expect_token_kinds(&[kind.clone()]).unwrap().kind,
-                kind
-            );
-        }
-        assert_token_kind(&mut lexer, TokenKind::OpenParen);
-        assert_token_kind(&mut lexer, TokenKind::Ident);
-        assert_token_kind(&mut lexer, TokenKind::Plus);
-        assert_token_kind(&mut lexer, TokenKind::NumLit);
-        assert_token_kind(&mut lexer, TokenKind::Mult);
-        assert_token_kind(&mut lexer, TokenKind::Ident);
-        assert_token_kind(&mut lexer, TokenKind::CloseParen);
-        assert_token_kind(&mut lexer, TokenKind::Pow);
-        assert_token_kind(&mut lexer, TokenKind::Div);
-        assert_token_kind(&mut lexer, TokenKind::Min);
-        assert_eq!(
-            lexer
-                .expect_token_kinds(&[TokenKind::OPERANDS, &[TokenKind::OpenParen]].concat())
-                .unwrap()
-                .kind,
-            TokenKind::Ident
-        );
-        assert_token_kind(&mut lexer, TokenKind::Equals);
-
-        end_test("expect_token_kinds");
-    }
-
-    #[test]
-    fn test_parser() {
-        start_test("parser");
-        fn test_parser_on_string(input: &str) {
-            let mut parser = Parser::from_string(input.to_string());
-            let expr = parser.parse(false).unwrap();
-            println!("{}", expr);
-            println!("{:#?}", expr);
-        }
-        test_parser_on_string("abc+1234");
-        test_parser_on_string("1234+abc");
-        test_parser_on_string("abc-1234");
-        test_parser_on_string("abc*1234");
-        test_parser_on_string("abc*1234+4321");
-        test_parser_on_string("abc*1234+4321*420/69");
-        test_parser_on_string("abc*1234+4321*420/69=321+123+(12*3)");
-
-        end_test("parser");
-    }
-    #[test]
-
-    fn test_expr_eval() {
-        start_test("expr_eval");
-
-        fn test_expr_eval_on_string(input: &str, expected: f64) {
-            let mut parser = Parser::from_string(input.to_string());
-            let expr = parser.parse(false).expect("failed to parse expression");
-            let mut env = HashMap::new();
-            let val = expr.eval(&mut env).expect_val("could not evaluate expr");
-            println!("{} evaluated to {}", expr, val);
-
-            assert_eq!(
-                val, expected,
-                "evaluating {} did not yield {}",
-                expr, expected
-            );
-        }
-
-        test_expr_eval_on_string("123456", 123456.0);
-        test_expr_eval_on_string("123.456", 123.456);
-        test_expr_eval_on_string("123+456", 579.0);
-        test_expr_eval_on_string("123-456", -333.0);
-        test_expr_eval_on_string("123*456", 56088.0);
-        test_expr_eval_on_string("2^3", 8.0);
-        test_expr_eval_on_string("123/456", 123.0 / 456.0);
-        test_expr_eval_on_string("2+3*3", 11.0);
-        test_expr_eval_on_string("3*2^3", 24.0);
-        test_expr_eval_on_string("1+3*2^4/8+6-3", 10.0);
-        test_expr_eval_on_string("1+3*2^4/8+6-31+3*2^4/8+6-3", -9.0);
-        test_expr_eval_on_string("(123+456)*2", 1158.0);
-        test_expr_eval_on_string("(1+2)*(3-4)^(2*3)", 3.0);
-        test_expr_eval_on_string("((1+2)*(3-4))^(2*3)", 729.0);
-        test_expr_eval_on_string("(1+2)*(3-4)^((2*3)^3*2)", 3.0);
-        end_test("expr_eval");
-    }
-    #[test]
-    fn test_functor_parsing() {
-        start_test("functor parsing");
-        fn test_functor_parsing_on_str(input: &str) {
-            let mut parser = Parser::from_string(input.to_string());
-            let expr = parser.parse(false).expect("failed to parse expression");
-            println!("input: {} Evaluated to: {}", input, expr)
-        }
-        test_functor_parsing_on_str("f(1,2,3)");
-        test_functor_parsing_on_str("g(a,b,c)");
-        test_functor_parsing_on_str("f(1,a,3)");
-        test_functor_parsing_on_str("f(1,g(2))");
-        // test_functor_parsing_on_str("");
-        end_test("functor parsing");
-    }
-
-    #[test]
-    fn test_var_eval() {
-        let mut env = HashMap::new();
-
-        fn test_var_eval_on_string(
-            input: &str,
-            env: &mut HashMap<String, Box<Expr>>,
-            expected: Option<f64>,
-        ) {
-            let mut parser = Parser::from_string(input.to_string());
-            let expr = parser.parse(false).expect("failed to parse expression");
-            let val = expr.eval(env);
-            println!("{} evaluated to {}", expr, val);
-            if let Some(expected) = expected {
-                assert_eq!(
-                    val.expect_val("could not evaluate expr"),
-                    expected,
-                    "evaluating {} did not yield {}",
-                    expr,
-                    expected
-                );
-            }
-        }
-        start_test("var evaluation");
-        test_var_eval_on_string("a=2", &mut env, None);
-        test_var_eval_on_string("a", &mut env, Some(2.0));
-        test_var_eval_on_string("abcde=(1+2)*(3-4)^((2*3)^3*2)", &mut env, None);
-        test_var_eval_on_string("a+abcde", &mut env, Some(5.0));
-        end_test("var evaluation");
     }
 }
