@@ -319,6 +319,7 @@ pub struct Parser {
     lexer: Lexer,
     stash: Vec<Expr>,
     diag: Diagnoster,
+    depth: i32,
 }
 impl Parser {
     pub fn from_string(input: String) -> Self {
@@ -326,6 +327,7 @@ impl Parser {
             lexer: Lexer::from_string(input),
             stash: vec![],
             diag: Diagnoster {},
+            depth: 0,
         }
     }
     fn parse_operand(&mut self) -> Option<Expr> {
@@ -475,6 +477,7 @@ impl Parser {
         None
     }
     fn parse_impl(&mut self, parsing_args: bool) -> Option<Expr> {
+        self.depth += 1;
         while let Some(peek_token) = self.lexer.peek_token() {
             match peek_token.kind {
                 TokenKind::OpenParen => {
@@ -482,6 +485,7 @@ impl Parser {
                         {
                             match stashed_expr {
                                 Expr::Variable(name) => {
+                                    self.depth -= 1;
                                     return self.parse_functor(name);
                                 }
 
@@ -511,6 +515,7 @@ impl Parser {
                 }
                 TokenKind::Comma => {
                     if parsing_args {
+                        self.depth -= 1;
                         return self.stash.pop();
                     } else {
                         self.diag.report(ParserError::UnexpectedToken {
@@ -525,6 +530,14 @@ impl Parser {
                     self.stash.push(expr);
                 }
                 x if x.is_operator() => {
+                    if x == TokenKind::Equals && self.depth != 1 {
+                        let while_doing="while not parsing a top-level operator. Equals is only allowed as the main expression, not in a subexpression".to_string();
+                        self.diag.report(ParserError::UnexpectedToken {
+                            found: peek_token,
+                            while_doing,
+                        });
+                        return None;
+                    }
                     let left = self.stash.pop()?;
                     let expr = self.parse_binop(left)?;
                     self.stash.push(expr)
@@ -543,6 +556,7 @@ impl Parser {
                 }
             }
         }
+        self.depth -= 1;
         self.stash.pop()
     }
 }
