@@ -158,6 +158,9 @@ impl Lexer {
     }
     fn token_from_chars(&mut self) -> Option<Token> {
         while let Some(next_char) = self.next_char() {
+            if next_char == ' ' {
+                continue;
+            }
             let current_loc = self.current_loc.clone();
             return match next_char {
                 '(' => Some(Token {
