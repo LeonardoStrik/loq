@@ -1,5 +1,5 @@
+use std::collections::HashMap;
 use std::fmt;
-use std::mem::discriminant;
 use std::string::String;
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -139,7 +139,6 @@ impl fmt::Display for Token {
         write!(f, "{}", output)
     }
 }
-
 #[derive(Debug, Clone)]
 pub enum Expr {
     // TODO: Implement a way to somehow store parens, useful for: partial evaluation of symbolics, more readable printing
@@ -157,40 +156,106 @@ pub enum Expr {
     Variable(String),
 }
 impl Expr {
-    pub fn eval(&self) -> Expr {
+    pub fn eval(&self, env: &mut HashMap<String, Box<Expr>>) -> Expr {
+        // top-level entrypoint for evaluation, can insert variable declarations etc
+        // this calls eval_recursive for further (non-mutable env) evaluation
         match self {
             Expr::BinOp {
                 op_kind,
                 left,
                 right,
             } => {
-                if let Expr::Numeric(a) = left.eval() {
-                    if let Expr::Numeric(b) = right.eval() {
-                        return match op_kind {
-                            OperatorKind::Mult => Expr::Numeric(a * b),
-                            OperatorKind::Div => Expr::Numeric(a / b),
-                            OperatorKind::Plus => Expr::Numeric(a + b),
-                            OperatorKind::Min => Expr::Numeric(a - b),
-                            OperatorKind::Pow => Expr::Numeric(a.powf(b)),
-                            _ => panic!("not all operators handled"),
-                        };
+                if *op_kind == OperatorKind::Equals && left.is_var() {
+                    let val = Box::new(right.eval_recursive(env));
+                    env.insert(
+                        left.expect_name("expected name on is_var == true").clone(),
+                        val.clone(),
+                    );
+                    Expr::BinOp {
+                        op_kind: *op_kind,
+                        left: left.clone(),
+                        right: val,
                     }
+                } else {
+                    self.eval_recursive(env)
                 }
+            }
+            Expr::Variable(name) => {
+                if let Some(val) = env.get(name) {
+                    *val.clone()
+                } else {
+                    self.eval_recursive(env)
+                }
+            }
+            _ => self.eval_recursive(env),
+        }
+    }
+    fn eval_recursive(&self, env: &HashMap<String, Box<Expr>>) -> Expr {
+        // evaluates expressions without evaluating equalities, therefore does not need a mut env
+        match self {
+            Expr::BinOp {
+                op_kind,
+                left,
+                right,
+            } => {
+                let a = left.eval_recursive(env);
+                let b = right.eval_recursive(env);
+                if a.is_num() && b.is_num() {
+                    let a = a.expect_val("expect val on is_num==true");
+                    let b = b.expect_val("expect val on is_num==true");
+                    return match op_kind {
+                        OperatorKind::Mult => Expr::Numeric(a * b),
+                        OperatorKind::Div => Expr::Numeric(a / b),
+                        OperatorKind::Plus => Expr::Numeric(a + b),
+                        OperatorKind::Min => Expr::Numeric(a - b),
+                        OperatorKind::Pow => Expr::Numeric(a.powf(b)),
+                        OperatorKind::Equals => Expr::BinOp {
+                            op_kind: *op_kind,
+                            left: Box::new(left.eval_recursive(env)),
+                            right: Box::new(right.eval_recursive(env)),
+                        },
+                    };
+                }
+
                 Expr::BinOp {
                     op_kind: *op_kind,
-                    left: Box::new(left.eval()),
-                    right: Box::new(right.eval()),
+                    left: Box::new(left.eval_recursive(env)),
+                    right: Box::new(right.eval_recursive(env)),
                 }
             }
             Expr::Fun { name: _, args: _ } => self.clone(),
             Expr::Numeric(_) => self.clone(),
-            Expr::Variable(_) => self.clone(),
+            Expr::Variable(name) => {
+                if let Some(val) = env.get(name) {
+                    *val.clone()
+                } else {
+                    self.clone()
+                }
+            }
         }
     }
     pub fn expect_val(&self, msg: &str) -> f64 {
         match self {
             Expr::Numeric(val) => *val,
             _ => panic!("{}", msg),
+        }
+    }
+    pub fn expect_name(&self, msg: &str) -> &String {
+        match self {
+            Expr::Variable(name) => name,
+            _ => panic!("{}", msg),
+        }
+    }
+    pub fn is_num(&self) -> bool {
+        match self {
+            Expr::Numeric(_) => true,
+            _ => false,
+        }
+    }
+    pub fn is_var(&self) -> bool {
+        match self {
+            Expr::Variable(_) => true,
+            _ => false,
         }
     }
 }
@@ -639,7 +704,8 @@ mod tests {
         fn test_expr_eval_on_string(input: &str, expected: f64) {
             let mut parser = Parser::from_string(input.to_string());
             let expr = parser.parse(false).expect("failed to parse expression");
-            let val = expr.eval().expect_val("could not evaluate expr");
+            let mut env = HashMap::new();
+            let val = expr.eval(&mut env).expect_val("could not evaluate expr");
             println!("{} evaluated to {}", expr, val);
 
             assert_eq!(
@@ -680,5 +746,36 @@ mod tests {
         test_functor_parsing_on_str("f(1,g(2))");
         // test_functor_parsing_on_str("");
         end_test("functor parsing");
+    }
+
+    #[test]
+    fn test_var_eval() {
+        let mut env = HashMap::new();
+
+        fn test_var_eval_on_string(
+            input: &str,
+            env: &mut HashMap<String, Box<Expr>>,
+            expected: Option<f64>,
+        ) {
+            let mut parser = Parser::from_string(input.to_string());
+            let expr = parser.parse(false).expect("failed to parse expression");
+            let val = expr.eval(env);
+            println!("{} evaluated to {}", expr, val);
+            if let Some(expected) = expected {
+                assert_eq!(
+                    val.expect_val("could not evaluate expr"),
+                    expected,
+                    "evaluating {} did not yield {}",
+                    expr,
+                    expected
+                );
+            }
+        }
+        start_test("var evaluation");
+        test_var_eval_on_string("a=2", &mut env, None);
+        test_var_eval_on_string("a", &mut env, Some(2.0));
+        test_var_eval_on_string("abcde=(1+2)*(3-4)^((2*3)^3*2)", &mut env, None);
+        test_var_eval_on_string("a+abcde", &mut env, Some(5.0));
+        end_test("var evaluation");
     }
 }

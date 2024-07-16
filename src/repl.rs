@@ -1,22 +1,25 @@
 use crate::lexer::{Expr, Parser};
+use std::collections::HashMap;
 use std::io::{self, Stdout};
 use std::io::{Stdin, Write};
 use std::vec::Vec;
-struct Env {
+struct ReplEnv {
     input: String,
     history: Vec<String>,
     stdout: Stdout,
     stdin: Stdin,
     quit: bool,
+    eval_env: HashMap<String, Box<Expr>>,
 }
-impl Env {
+impl ReplEnv {
     pub fn new() -> Self {
-        Env {
+        ReplEnv {
             input: String::new(),
             history: Vec::new(),
             stdin: io::stdin(),
             stdout: io::stdout(),
             quit: false,
+            eval_env: HashMap::new(),
         }
     }
     pub fn read_input(&mut self) -> io::Result<()> {
@@ -30,7 +33,7 @@ impl Env {
     }
 }
 pub fn repl() -> io::Result<()> {
-    let mut env = Env::new();
+    let mut env = ReplEnv::new();
 
     while !env.quit {
         env.read_input()?;
@@ -50,7 +53,7 @@ pub fn repl() -> io::Result<()> {
             input => {
                 let mut parser = Parser::from_string(input.to_string());
                 match parser.parse(false) {
-                    Some(expr) => match expr.eval() {
+                    Some(expr) => match expr.eval(&mut env.eval_env) {
                         Expr::Numeric(val) => println!("  =>value:  {}", val),
                         otherwise => println!("  =>symbolic  {}", otherwise),
                     },
