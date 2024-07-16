@@ -70,12 +70,12 @@ pub enum OperatorKind {
 impl OperatorKind {
     fn get_precedence(self) -> i32 {
         match self {
-            OperatorKind::Equals => 0,
-            OperatorKind::Pow => 1,
-            OperatorKind::Mult => 2,
-            OperatorKind::Div => 2,
-            OperatorKind::Plus => 3,
-            OperatorKind::Min => 3,
+            OperatorKind::Pow => 0,
+            OperatorKind::Mult => 1,
+            OperatorKind::Div => 1,
+            OperatorKind::Plus => 2,
+            OperatorKind::Min => 2,
+            OperatorKind::Equals => 3,
         }
     }
     fn from_token_kind(kind: &TokenKind) -> Self {
@@ -292,6 +292,11 @@ impl Lexer {
                     kind: TokenKind::CloseParen,
                     loc: current_loc,
                     value: ")".to_string(),
+                }),
+                '=' => Some(Token {
+                    kind: TokenKind::Equals,
+                    loc: current_loc,
+                    value: "=".to_string(),
                 }),
                 ',' => Some(Token {
                     kind: TokenKind::Comma,
@@ -573,7 +578,7 @@ mod tests {
     #[test]
     fn test_expect_token_kinds() {
         start_test("expect_token_kinds");
-        let some_string = String::from("(abc+1234*c)^/-abcd");
+        let some_string = String::from("(abc+1234*c)^/-abcd=");
         let mut lexer = Lexer::from_string(some_string);
 
         fn assert_token_kind(lexer: &mut Lexer, kind: TokenKind) {
@@ -602,6 +607,7 @@ mod tests {
                 .kind,
             TokenKind::Ident
         );
+        assert_token_kind(&mut lexer, TokenKind::Equals);
 
         end_test("expect_token_kinds");
     }
@@ -621,6 +627,8 @@ mod tests {
         test_parser_on_string("abc*1234");
         test_parser_on_string("abc*1234+4321");
         test_parser_on_string("abc*1234+4321*420/69");
+        test_parser_on_string("abc*1234+4321*420/69=321+123+(12*3)");
+
         end_test("parser");
     }
     #[test]
