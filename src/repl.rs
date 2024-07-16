@@ -53,12 +53,11 @@ pub fn repl() -> io::Result<()> {
             // }
             input => {
                 let mut parser = Parser::from_string(input.to_string());
-                match parser.parse(false) {
-                    Some(expr) => match expr.eval(&mut env.eval_env) {
+                if let Some(expr) = parser.parse(false) {
+                    match expr.eval(&mut env.eval_env) {
                         Expr::Numeric(val) => println!("  =>value:  {}", val),
                         otherwise => println!("  =>symbolic  {}", otherwise),
-                    },
-                    None => println!("unable to parse"),
+                    }
                 }
             }
         };
