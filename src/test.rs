@@ -20,7 +20,7 @@ mod tests {
     #[test]
     fn test_expect_token_kinds() {
         start_test("expect_token_kinds");
-        let some_string = String::from("(abc+1234*c)^/-abcd=");
+        let some_string = String::from(" ( abc + 1234 * c ) ^ / - abcd = ");
         let mut lexer = Lexer::from_string(some_string);
 
         fn assert_token_kind(lexer: &mut Lexer, kind: TokenKind) {

@@ -1,7 +1,10 @@
 use std::fmt;
 use std::string::String;
 
-use crate::expr::{Expr, OperatorKind};
+use crate::{
+    diag::{Diagnoster, LogLevel},
+    expr::{Expr, OperatorKind},
+};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Loc {
@@ -58,6 +61,25 @@ impl TokenKind {
         OperatorKind::from_token_kind(self).get_precedence()
     }
 }
+impl fmt::Display for TokenKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let output = match &self {
+            TokenKind::OpenParen => "(",
+            TokenKind::CloseParen => ")",
+            TokenKind::Comma => ",",
+            TokenKind::Mult => "*",
+            TokenKind::Div => "/",
+            TokenKind::Plus => "+",
+            TokenKind::Min => "-",
+            TokenKind::Pow => "^",
+            TokenKind::Equals => "=",
+            TokenKind::Ident => "Ident",
+            TokenKind::NumLit => "NumLit",
+        };
+
+        write!(f, "{}", output)
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct Token {
@@ -72,24 +94,16 @@ impl Token {
                 .value
                 .parse::<f64>()
                 .expect("failed to parse NumLit in to_value"),
-            _ => panic!("called to_value on a {:?}", self.kind),
+            _ => panic!("called to_value on a {}", self),
         }
     }
 }
 impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let output = match &self.kind {
-            TokenKind::OpenParen => "(",
-            TokenKind::CloseParen => ")",
-            TokenKind::Comma => ",",
-            TokenKind::Mult => "*",
-            TokenKind::Div => "/",
-            TokenKind::Plus => "+",
-            TokenKind::Min => "-",
-            TokenKind::Pow => "^",
-            TokenKind::Equals => "=",
-            TokenKind::Ident => &self.value.as_str(),
-            TokenKind::NumLit => &self.value.as_str(),
+            TokenKind::Ident => self.value.as_str(),
+            TokenKind::NumLit => self.value.as_str(),
+            otherwise => &otherwise.to_string(),
         };
 
         write!(f, "{}", output)
@@ -102,6 +116,7 @@ pub struct Lexer {
     pub current_loc: Loc,
     peeked_token: Option<Token>,
     is_empty: bool,
+    diag: Diagnoster,
 }
 impl Iterator for Lexer {
     type Item = Token;
@@ -118,6 +133,7 @@ impl Lexer {
             current_loc: Loc { ln: 0, col: -1 },
             peeked_token: None,
             is_empty: false,
+            diag: Diagnoster {},
         }
     }
     fn peek_char(&mut self) -> Option<char> {
@@ -229,12 +245,16 @@ impl Lexer {
                     {
                         if next_char == dec_sep {
                             if found_dec_sep {
-                                todo!("implement error handling")
+                                return None;
                             } else {
                                 found_dec_sep = true;
                             }
                         }
                         temp.push(next_char)
+                    }
+                    if let Some(_) = self.next_char_if(|x| x.is_alphabetic()) {
+                        self.diag.report(LogLevel::Error, "variables must begin with an alphabetic character, but may contain numbers afterwards");
+                        return None;
                     }
                     Some(Token {
                         kind: TokenKind::NumLit,
@@ -242,7 +262,13 @@ impl Lexer {
                         value: temp.clone(),
                     })
                 }
-                _ => None,
+                otherwise => {
+                    self.diag.report(
+                        LogLevel::Error,
+                        &format!("unrecognized token {}", otherwise),
+                    );
+                    None
+                }
             };
         }
         None
@@ -253,6 +279,26 @@ impl Lexer {
                 return self.next_token();
             }
         }
+        let mut msg = String::from("Expected ");
+        if expected.len() > 1 {
+            msg.push_str("either ")
+        }
+        for (i, kind) in expected.iter().enumerate() {
+            msg.push_str(&kind.to_string());
+            if expected.len() > 1 {
+                if i < expected.len() - 2 {
+                    msg.push_str(", ");
+                } else if i == expected.len() - 2 {
+                    msg.push_str(" or ")
+                }
+            }
+        }
+        if let Some(token) = self.peek_token() {
+            msg.push_str(&format!(". Found {} instead", token));
+        } else {
+            msg.push_str(". Found nothing instead");
+        }
+        self.diag.report(LogLevel::Error, &msg);
         None
     }
     fn drop_token(&mut self) {
@@ -263,12 +309,14 @@ impl Lexer {
 pub struct Parser {
     lexer: Lexer,
     stash: Vec<Expr>,
+    diag: Diagnoster,
 }
 impl Parser {
     pub fn from_string(input: String) -> Self {
         Parser {
             lexer: Lexer::from_string(input),
             stash: vec![],
+            diag: Diagnoster {},
         }
     }
     fn parse_operand(&mut self) -> Option<Expr> {
@@ -391,18 +439,31 @@ impl Parser {
                     if let Some(stashed_expr) = self.stash.pop() {
                         {
                             match stashed_expr {
-                                Expr::Numeric(_) => todo!("implement implicit differentiation"),
                                 Expr::Variable(name) => {
                                     return self.parse_functor(name);
                                 }
-                                _ => todo!("error handling"),
+                                Expr::Numeric(_) => {
+                                    self.diag.report(
+                                        LogLevel::Error,
+                                        &format!("implicit differentiation not yet supported"),
+                                    );
+                                    return None;
+                                }
+                                _ => {
+                                    self.diag.report(
+                                        LogLevel::Error,
+                                        &format!(
+                                            "Expected an Ident before an Open paren, found {} ",
+                                            stashed_expr
+                                        ),
+                                    );
+                                    return None;
+                                }
                             }
                         }
                     }
                     self.lexer.drop_token();
-                    let result = self
-                        .parse(false)
-                        .expect("expected expression after open paren");
+                    let result = self.parse(false)?;
                     self.stash.push(result)
                 }
                 TokenKind::CloseParen => {
@@ -420,19 +481,12 @@ impl Parser {
                     }
                 }
                 TokenKind::Ident | TokenKind::NumLit => {
-                    let mut expr = self
-                        .parse_operand()
-                        .expect("matched Ident or NumLit on peek but failed to parse expr");
+                    let mut expr = self.parse_operand()?;
                     self.stash.push(expr);
                 }
                 x if x.is_operator() => {
-                    let left = self
-                        .stash
-                        .pop()
-                        .expect("Expected an operand before an operator");
-                    let expr = self
-                        .parse_binop(left)
-                        .expect("expected an operand after operator");
+                    let left = self.stash.pop()?;
+                    let expr = self.parse_binop(left)?;
                     self.stash.push(expr)
                 }
                 _ => panic!("panicked on token {}", peek_token),
