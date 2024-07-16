@@ -511,12 +511,11 @@ impl Parser {
                     self.stash.push(result)
                 }
                 TokenKind::CloseParen => {
-                    return self.stash.pop();
+                    break;
                 }
                 TokenKind::Comma => {
                     if parsing_args {
-                        self.depth -= 1;
-                        return self.stash.pop();
+                        break;
                     } else {
                         self.diag.report(ParserError::UnexpectedToken {
                             found: peek_token,
