@@ -327,7 +327,11 @@ impl Parser {
             match token.kind {
                 TokenKind::Ident => Some(Expr::Variable(token.value)),
                 TokenKind::NumLit => Some(Expr::Numeric(token.to_value())),
-                TokenKind::OpenParen => self.parse(false),
+                TokenKind::OpenParen => {
+                    let operand = self.parse(false);
+                    let _ = self.lexer.expect_token_kinds(&[TokenKind::CloseParen]);
+                    operand
+                }
                 _ => None,
             }
         } else {
@@ -426,6 +430,14 @@ impl Parser {
         while let Some(_) = self.lexer.peek_token() {
             if let Some(arg) = self.parse(true) {
                 args.push(arg);
+                let token = self
+                    .lexer
+                    .expect_token_kinds(&[TokenKind::CloseParen, TokenKind::Comma])?;
+                match token.kind {
+                    TokenKind::CloseParen => return Some(Expr::Fun { name, args }),
+                    TokenKind::Comma => continue,
+                    _ => panic!("found not comma or close paren while expecting them"),
+                }
             } else {
                 return Some(Expr::Fun { name, args });
             }
@@ -464,19 +476,18 @@ impl Parser {
                     }
                     self.lexer.drop_token();
                     let result = self.parse(false)?;
+                    let _ = self.lexer.expect_token_kinds(&[TokenKind::CloseParen])?;
                     self.stash.push(result)
                 }
                 TokenKind::CloseParen => {
-                    if !parsing_args {
-                        self.lexer.drop_token();
-                    }
                     return self.stash.pop();
                 }
                 TokenKind::Comma => {
                     if parsing_args {
-                        self.lexer.drop_token();
                         return self.stash.pop();
                     } else {
+                        self.diag
+                            .report(LogLevel::Error, "Found comma while not parsing args.");
                         return None;
                     }
                 }
