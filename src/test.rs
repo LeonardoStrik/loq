@@ -95,6 +95,7 @@ mod tests {
         test_parser_on_string("abc<", true);
         test_parser_on_string("abc*1234+4321*420/69=321+123+(12*3)", true);
         test_parser_on_string("a+(12*3", true);
+        test_parser_on_string("1+2)*3", true);
         test_parser_on_string("ab 123", true);
         test_parser_on_string("f(a,b", true);
         test_parser_on_string("f(a b)", true);

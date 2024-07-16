@@ -357,8 +357,6 @@ impl Parser {
         }
     }
     fn parse_binop(&mut self, left: Expr) -> Option<Expr> {
-        // TODO: Somehow refactor this to eliminate hella copy-pasting in checking whether to parse next expression or not
-        // TODO: implement some kind of checking whether the complete expression was parsed, expecially due to hanging parens, e.g. "1+2)*3" yields 3
         let operator = self.lexer.expect_token_kinds(
             TokenKind::OPERATORS,
             "while parsing binary operator".to_string(),
@@ -379,22 +377,7 @@ impl Parser {
         let right = self.parse_operand()?;
         while let Some(token) = self.lexer.peek_token() {
             match token.kind {
-                TokenKind::CloseParen => match self.stash.pop() {
-                    Some(right_expr) => {
-                        return Some(Expr::BinOp {
-                            op_kind: OperatorKind::from_token_kind(&operator.kind),
-                            left: Box::new(left),
-                            right: Box::new(right_expr),
-                        });
-                    }
-                    None => {
-                        return Some(Expr::BinOp {
-                            op_kind: OperatorKind::from_token_kind(&operator.kind),
-                            left: Box::new(left),
-                            right: Box::new(right),
-                        });
-                    }
-                },
+                TokenKind::CloseParen => break,
                 x if x.is_operator() => {
                     if x.get_precedence() < operator.kind.get_precedence() {
                         match self.stash.pop() {
@@ -408,24 +391,7 @@ impl Parser {
                             }
                         }
                     } else {
-                        {
-                            match self.stash.pop() {
-                                Some(right_expr) => {
-                                    return Some(Expr::BinOp {
-                                        op_kind: OperatorKind::from_token_kind(&operator.kind),
-                                        left: Box::new(left),
-                                        right: Box::new(right_expr),
-                                    });
-                                }
-                                None => {
-                                    return Some(Expr::BinOp {
-                                        op_kind: OperatorKind::from_token_kind(&operator.kind),
-                                        left: Box::new(left),
-                                        right: Box::new(right),
-                                    });
-                                }
-                            }
-                        }
+                        break;
                     }
                 }
 
