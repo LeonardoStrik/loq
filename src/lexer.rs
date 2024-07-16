@@ -36,6 +36,7 @@ impl TokenKind {
         TokenKind::Plus,
         TokenKind::Min,
         TokenKind::Pow,
+        TokenKind::Equals,
     ];
     const OPERANDS: &'static [TokenKind] = &[TokenKind::Ident, TokenKind::NumLit];
     fn is_in(self, expected: &[TokenKind]) -> bool {
@@ -608,24 +609,18 @@ mod tests {
     #[test]
     fn test_parser() {
         start_test("parser");
-        fn test_parser_on_string(input: String) {
-            let mut parser = Parser::from_string(input);
+        fn test_parser_on_string(input: &str) {
+            let mut parser = Parser::from_string(input.to_string());
             let expr = parser.parse(false).unwrap();
             println!("{}", expr);
             println!("{:#?}", expr);
         }
-        let some_string = String::from("abc+1234");
-        test_parser_on_string(some_string);
-        let some_string = String::from("1234+abc");
-        test_parser_on_string(some_string);
-        let some_string = String::from("abc-1234");
-        test_parser_on_string(some_string);
-        let some_string = String::from("abc*1234");
-        test_parser_on_string(some_string);
-        let some_string = String::from("abc*1234+4321");
-        test_parser_on_string(some_string);
-        let some_string = String::from("abc*1234+4321*420/69");
-        test_parser_on_string(some_string);
+        test_parser_on_string("abc+1234");
+        test_parser_on_string("1234+abc");
+        test_parser_on_string("abc-1234");
+        test_parser_on_string("abc*1234");
+        test_parser_on_string("abc*1234+4321");
+        test_parser_on_string("abc*1234+4321*420/69");
         end_test("parser");
     }
     #[test]
@@ -633,8 +628,8 @@ mod tests {
     fn test_expr_eval() {
         start_test("expr_eval");
 
-        fn test_expr_eval_on_string(input: String, expected: f64) {
-            let mut parser = Parser::from_string(input);
+        fn test_expr_eval_on_string(input: &str, expected: f64) {
+            let mut parser = Parser::from_string(input.to_string());
             let expr = parser.parse(false).expect("failed to parse expression");
             let val = expr.eval().expect_val("could not evaluate expr");
             println!("{} evaluated to {}", expr, val);
@@ -646,36 +641,21 @@ mod tests {
             );
         }
 
-        let some_string = String::from("123456");
-        test_expr_eval_on_string(some_string, 123456.0);
-        let some_string = String::from("123.456");
-        test_expr_eval_on_string(some_string, 123.456);
-        let some_string = String::from("123+456");
-        test_expr_eval_on_string(some_string, 579.0);
-        let some_string = String::from("123-456");
-        test_expr_eval_on_string(some_string, -333.0);
-        let some_string = String::from("123*456");
-        test_expr_eval_on_string(some_string, 56088.0);
-        let some_string = String::from("2^3");
-        test_expr_eval_on_string(some_string, 8.0);
-        let some_string = String::from("123/456");
-        test_expr_eval_on_string(some_string, 123.0 / 456.0);
-        let some_string = String::from("2+3*3");
-        test_expr_eval_on_string(some_string, 11.0);
-        let some_string = String::from("3*2^3");
-        test_expr_eval_on_string(some_string, 24.0);
-        let some_string = String::from("1+3*2^4/8+6-3");
-        test_expr_eval_on_string(some_string, 10.0);
-        let some_string = String::from("1+3*2^4/8+6-31+3*2^4/8+6-3");
-        test_expr_eval_on_string(some_string, -9.0);
-        let some_string = String::from("(123+456)*2");
-        test_expr_eval_on_string(some_string, 1158.0);
-        let some_string = String::from("(1+2)*(3-4)^(2*3)");
-        test_expr_eval_on_string(some_string, 3.0);
-        let some_string = String::from("((1+2)*(3-4))^(2*3)");
-        test_expr_eval_on_string(some_string, 729.0);
-        let some_string = String::from("(1+2)*(3-4)^((2*3)^3*2)");
-        test_expr_eval_on_string(some_string, 3.0);
+        test_expr_eval_on_string("123456", 123456.0);
+        test_expr_eval_on_string("123.456", 123.456);
+        test_expr_eval_on_string("123+456", 579.0);
+        test_expr_eval_on_string("123-456", -333.0);
+        test_expr_eval_on_string("123*456", 56088.0);
+        test_expr_eval_on_string("2^3", 8.0);
+        test_expr_eval_on_string("123/456", 123.0 / 456.0);
+        test_expr_eval_on_string("2+3*3", 11.0);
+        test_expr_eval_on_string("3*2^3", 24.0);
+        test_expr_eval_on_string("1+3*2^4/8+6-3", 10.0);
+        test_expr_eval_on_string("1+3*2^4/8+6-31+3*2^4/8+6-3", -9.0);
+        test_expr_eval_on_string("(123+456)*2", 1158.0);
+        test_expr_eval_on_string("(1+2)*(3-4)^(2*3)", 3.0);
+        test_expr_eval_on_string("((1+2)*(3-4))^(2*3)", 729.0);
+        test_expr_eval_on_string("(1+2)*(3-4)^((2*3)^3*2)", 3.0);
         end_test("expr_eval");
     }
     #[test]
