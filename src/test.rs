@@ -66,19 +66,38 @@ mod tests {
     #[test]
     fn test_parser() {
         start_test("parser");
-        fn test_parser_on_string(input: &str) {
+        fn test_parser_on_string(input: &str, should_fail: bool) {
             let mut parser = Parser::from_string(input.to_string());
-            let expr = parser.parse().unwrap();
+            let expr = match parser.parse() {
+                Some(expr) => {
+                    assert!(
+                        !should_fail,
+                        "Parsed {} from {}, expected to fail.",
+                        expr, input,
+                    );
+                    expr
+                }
+                None => return assert!(should_fail, "Failed on {}, but didn't expect to", input),
+            };
             println!("{}", expr);
             println!("{:#?}", expr);
         }
-        test_parser_on_string("abc+1234");
-        test_parser_on_string("1234+abc");
-        test_parser_on_string("abc-1234");
-        test_parser_on_string("abc*1234");
-        test_parser_on_string("abc*1234+4321");
-        test_parser_on_string("abc*1234+4321*420/69");
-        test_parser_on_string("abc*1234+4321*420/69=321+123+(12*3)");
+        test_parser_on_string("abc+1234", false);
+        test_parser_on_string("1234+abc", false);
+        test_parser_on_string("abc-1234", false);
+        test_parser_on_string("abc*1234", false);
+        test_parser_on_string("abc*1234+4321", false);
+        test_parser_on_string("abc*1234+4321*420/69", false);
+        test_parser_on_string("abc=1234+4321*420/69", false);
+        test_parser_on_string("f(ab,c,g(q))", false);
+        test_parser_on_string("123=123", true);
+        test_parser_on_string("123<", true);
+        test_parser_on_string("abc<", true);
+        test_parser_on_string("abc*1234+4321*420/69=321+123+(12*3)", true);
+        test_parser_on_string("a+(12*3", true);
+        test_parser_on_string("ab 123", true);
+        test_parser_on_string("f(a,b", true);
+        test_parser_on_string("f(a b)", true);
 
         end_test("parser");
     }

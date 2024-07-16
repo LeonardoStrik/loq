@@ -1,6 +1,9 @@
 use core::fmt;
 
-use crate::lexer::{Loc, Token, TokenKind};
+use crate::{
+    expr::Expr,
+    lexer::{Loc, Token, TokenKind},
+};
 
 pub enum LogLevel {
     Info,
@@ -37,6 +40,11 @@ impl Diagnoster {
                 found,
                 while_doing: _,
             } => found.loc,
+            ParserError::InvalidExpr {
+                loc,
+                found: _,
+                reason: _,
+            } => loc,
         };
         match problem_loc {
             Loc::Repl { line, idx } => {
@@ -66,12 +74,19 @@ pub enum ParserError {
         found: Token,
         while_doing: String,
     },
+    InvalidExpr {
+        loc: Loc,
+        found: Box<Expr>,
+        reason: String,
+    },
 }
 
 impl fmt::Display for ParserError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let out = match self {
-            ParserError::UnexpectedChar { char, loc: _ } => &format!("Found unexpected {}.", char),
+            ParserError::UnexpectedChar { char, loc: _ } => {
+                &format!("Found unexpected '{}'.", char)
+            }
             ParserError::ExpectedToken {
                 expected,
                 found,
@@ -104,6 +119,14 @@ impl fmt::Display for ParserError {
             ParserError::UnexpectedToken { found, while_doing } => {
                 &format!("Found unexpected {} {}.", found, while_doing)
             }
+            ParserError::InvalidExpr {
+                loc: _,
+                found,
+                reason,
+            } => &format!(
+                "Found {}. This is an invalid expression because {}",
+                found, reason
+            ),
         };
         write!(f, "{}", out)
     }

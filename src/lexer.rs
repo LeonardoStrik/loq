@@ -260,6 +260,10 @@ impl Lexer {
                     {
                         if next_char == dec_sep {
                             if found_dec_sep {
+                                self.diag.report(ParserError::UnexpectedChar {
+                                    char: next_char,
+                                    loc: self.current_loc.clone(),
+                                });
                                 return None;
                             } else {
                                 found_dec_sep = true;
@@ -267,12 +271,14 @@ impl Lexer {
                         }
                         temp.push(next_char)
                     }
-                    if let Some(next_char) = self.next_char_if(|x| x.is_alphabetic()) {
-                        self.diag.report(ParserError::UnexpectedChar {
-                            char: next_char,
-                            loc: current_loc,
-                        });
-                        return None;
+                    if let Some(peeked_char) = self.peek_char() {
+                        if peeked_char.is_alphabetic() {
+                            self.diag.report(ParserError::UnexpectedChar {
+                                char: next_char,
+                                loc: current_loc,
+                            });
+                            return None;
+                        }
                     }
                     Some(Token {
                         kind: TokenKind::NumLit,
@@ -285,6 +291,7 @@ impl Lexer {
                         char: otherwise,
                         loc: current_loc,
                     });
+                    self.is_empty = false;
                     None
                 }
             };
@@ -331,101 +338,48 @@ impl Parser {
         }
     }
     fn parse_operand(&mut self) -> Option<Expr> {
-        if let Some(token) = self.lexer.expect_token_kinds(
-            &vec![&[TokenKind::OpenParen], TokenKind::OPERANDS].concat(),
+        let token = self.lexer.expect_token_kinds(
+            &[&[TokenKind::OpenParen], TokenKind::OPERANDS].concat(),
             "while parsing operand".to_string(),
-        ) {
-            match token.kind {
-                TokenKind::Ident => Some(Expr::Variable(token.value)),
-                TokenKind::NumLit => Some(Expr::Numeric(token.to_value())),
-                TokenKind::OpenParen => {
-                    let operand = self.parse_impl(false);
-                    let _ = self.lexer.expect_token_kinds(
-                        &[TokenKind::CloseParen],
-                        "while parsing expression between parentheses".to_string(),
-                    );
-                    operand
-                }
-                _ => None,
+        )?;
+        match token.kind {
+            TokenKind::Ident => Some(Expr::Variable(token.value)),
+            TokenKind::NumLit => Some(Expr::Numeric(token.to_value())),
+            TokenKind::OpenParen => {
+                let operand = self.parse_impl(false);
+                let _ = self.lexer.expect_token_kinds(
+                    &[TokenKind::CloseParen],
+                    "while parsing expression between parentheses".to_string(),
+                )?;
+                operand
             }
-        } else {
-            None
+            _ => None,
         }
     }
     fn parse_binop(&mut self, left: Expr) -> Option<Expr> {
         // TODO: Somehow refactor this to eliminate hella copy-pasting in checking whether to parse next expression or not
         // TODO: implement some kind of checking whether the complete expression was parsed, expecially due to hanging parens, e.g. "1+2)*3" yields 3
-        if let Some(operator) = self.lexer.expect_token_kinds(
+        let operator = self.lexer.expect_token_kinds(
             TokenKind::OPERATORS,
             "while parsing binary operator".to_string(),
-        ) {
-            if let Some(right) = self.parse_operand() {
-                while let Some(token) = self.lexer.peek_token() {
-                    match token.kind {
-                        TokenKind::CloseParen => match self.stash.pop() {
-                            Some(right_expr) => {
-                                return Some(Expr::BinOp {
-                                    op_kind: OperatorKind::from_token_kind(&operator.kind),
-                                    left: Box::new(left),
-                                    right: Box::new(right_expr),
-                                });
-                            }
-                            None => {
-                                return Some(Expr::BinOp {
-                                    op_kind: OperatorKind::from_token_kind(&operator.kind),
-                                    left: Box::new(left),
-                                    right: Box::new(right),
-                                });
-                            }
-                        },
-                        x if x.is_operator() => {
-                            if x.get_precedence() < operator.kind.get_precedence() {
-                                match self.stash.pop() {
-                                    Some(prev_expr) => {
-                                        let temp_right = self.parse_binop(prev_expr).unwrap();
-                                        self.stash.push(temp_right)
-                                    }
-                                    None => {
-                                        let temp_right = self.parse_binop(right.clone()).unwrap();
-                                        self.stash.push(temp_right)
-                                    }
-                                }
-                            } else {
-                                {
-                                    match self.stash.pop() {
-                                        Some(right_expr) => {
-                                            return Some(Expr::BinOp {
-                                                op_kind: OperatorKind::from_token_kind(
-                                                    &operator.kind,
-                                                ),
-                                                left: Box::new(left),
-                                                right: Box::new(right_expr),
-                                            });
-                                        }
-                                        None => {
-                                            return Some(Expr::BinOp {
-                                                op_kind: OperatorKind::from_token_kind(
-                                                    &operator.kind,
-                                                ),
-                                                left: Box::new(left),
-                                                right: Box::new(right),
-                                            });
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        _ => {
-                            self.diag.report(ParserError::UnexpectedToken {
-                                found: token,
-                                while_doing: "while parsing binary operator".to_string(),
-                            });
-                            return None;
-                        }
-                    }
+        )?;
+        if operator.kind == TokenKind::Equals {
+            match left {
+                Expr::Variable(_) => (),
+                _ => {
+                    self.diag.report(ParserError::InvalidExpr {
+                        loc: operator.loc,
+                        found: Box::new(left),
+                        reason: "can only assign values to a variable".to_string(),
+                    });
+                    return None;
                 }
-                match self.stash.pop() {
+            }
+        }
+        let right = self.parse_operand()?;
+        while let Some(token) = self.lexer.peek_token() {
+            match token.kind {
+                TokenKind::CloseParen => match self.stash.pop() {
                     Some(right_expr) => {
                         return Some(Expr::BinOp {
                             op_kind: OperatorKind::from_token_kind(&operator.kind),
@@ -440,10 +394,66 @@ impl Parser {
                             right: Box::new(right),
                         });
                     }
+                },
+                x if x.is_operator() => {
+                    if x.get_precedence() < operator.kind.get_precedence() {
+                        match self.stash.pop() {
+                            Some(prev_expr) => {
+                                let temp_right = self.parse_binop(prev_expr)?;
+                                self.stash.push(temp_right)
+                            }
+                            None => {
+                                let temp_right = self.parse_binop(right.clone())?;
+                                self.stash.push(temp_right)
+                            }
+                        }
+                    } else {
+                        {
+                            match self.stash.pop() {
+                                Some(right_expr) => {
+                                    return Some(Expr::BinOp {
+                                        op_kind: OperatorKind::from_token_kind(&operator.kind),
+                                        left: Box::new(left),
+                                        right: Box::new(right_expr),
+                                    });
+                                }
+                                None => {
+                                    return Some(Expr::BinOp {
+                                        op_kind: OperatorKind::from_token_kind(&operator.kind),
+                                        left: Box::new(left),
+                                        right: Box::new(right),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+
+                _ => {
+                    self.diag.report(ParserError::UnexpectedToken {
+                        found: token,
+                        while_doing: "while parsing binary operator".to_string(),
+                    });
+                    return None;
                 }
             }
         }
-        None
+        match self.stash.pop() {
+            Some(right_expr) => {
+                return Some(Expr::BinOp {
+                    op_kind: OperatorKind::from_token_kind(&operator.kind),
+                    left: Box::new(left),
+                    right: Box::new(right_expr),
+                });
+            }
+            None => {
+                return Some(Expr::BinOp {
+                    op_kind: OperatorKind::from_token_kind(&operator.kind),
+                    left: Box::new(left),
+                    right: Box::new(right),
+                });
+            }
+        }
     }
     fn parse_functor(&mut self, name: String) -> Option<Expr> {
         let _ = self
@@ -525,12 +535,23 @@ impl Parser {
                     }
                 }
                 TokenKind::Ident | TokenKind::NumLit => {
+                    if let Some(expr) = self.stash.last() {
+                        let while_doing = format!("Parsing after expression {}", expr);
+                        self.diag.report(ParserError::UnexpectedToken {
+                            found: peek_token,
+                            while_doing,
+                        });
+                        return None;
+                    }
                     let mut expr = self.parse_operand()?;
                     self.stash.push(expr);
                 }
                 x if x.is_operator() => {
                     if x == TokenKind::Equals && self.depth != 1 {
-                        let while_doing="while not parsing a top-level operator. Equals is only allowed as the main expression, not in a subexpression".to_string();
+                        let while_doing = "while not parsing a top-level operator.\
+                         Equals is only allowed as the main expression, not in a subexpression"
+                            .to_string();
+
                         self.diag.report(ParserError::UnexpectedToken {
                             found: peek_token,
                             while_doing,
