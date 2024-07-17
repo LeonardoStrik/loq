@@ -73,17 +73,24 @@ impl Expr {
                 left,
                 right,
             } => {
-                if *op_kind == OperatorKind::Equals && left.is_var() {
-                    let val = Box::new(right.eval_recursive(env));
-                    env.insert(
-                        left.expect_name("expected name on is_var == true").clone(),
-                        val.clone(),
-                    );
-                    Expr::BinOp {
+                if *op_kind == OperatorKind::Equals {
+                    let right = Box::new(right.eval_recursive(env));
+                    let expr = Expr::BinOp {
                         op_kind: *op_kind,
                         left: left.clone(),
-                        right: val,
-                    }
+                        right: right.clone(),
+                    };
+
+                    match *left.clone() {
+                        Expr::Fun { name, args: _ } => {
+                            env.insert(name, Box::new(expr.clone()));
+                        }
+                        Expr::Variable(name) => {
+                            env.insert(name, right);
+                        }
+                        _ => panic!("Invalid expression, should not have been parsed"),
+                    };
+                    expr
                 } else {
                     self.eval_recursive(env)
                 }
@@ -131,7 +138,13 @@ impl Expr {
                     right: Box::new(right.eval_recursive(env)),
                 }
             }
-            Expr::Fun { name: _, args: _ } => self.clone(),
+            Expr::Fun { name, args: _ } => {
+                if let Some(val) = env.get(name) {
+                    *val.clone()
+                } else {
+                    self.clone()
+                }
+            }
             Expr::Numeric(_) => self.clone(),
             Expr::Variable(name) => {
                 if let Some(val) = env.get(name) {

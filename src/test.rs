@@ -90,6 +90,7 @@ mod tests {
         test_parser_on_string("abc*1234+4321*420/69", false);
         test_parser_on_string("abc=1234+4321*420/69", false);
         test_parser_on_string("f(ab,c,g(q))", false);
+        test_parser_on_string("abc+f(ab,c,g(q))", false);
         test_parser_on_string("123=123", true);
         test_parser_on_string("123<", true);
         test_parser_on_string("abc<", true);

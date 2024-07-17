@@ -126,7 +126,6 @@ pub struct Lexer {
     pub counter: usize,
     pub current_loc: Loc,
     peeked_token: Option<Token>,
-    is_empty: bool,
     diag: Diagnoster,
 }
 
@@ -140,8 +139,14 @@ impl Lexer {
                 idx: -1,
             },
             peeked_token: None,
-            is_empty: false,
             diag: Diagnoster {},
+        }
+    }
+    pub fn is_empty(&mut self) -> bool {
+        if let Some(_) = self.peek_char() {
+            false
+        } else {
+            true
         }
     }
     fn increment(&mut self) {
@@ -158,12 +163,8 @@ impl Lexer {
     fn next_char(&mut self) -> Option<char> {
         if let Some(result) = self.peek_char() {
             self.increment();
-            if let None = self.peek_char() {
-                self.is_empty = true;
-            }
             Some(result)
         } else {
-            self.is_empty = true;
             None
         }
     }
@@ -176,10 +177,16 @@ impl Lexer {
         None
     }
     pub fn next_token(&mut self) -> Option<Token> {
+        //TODO: fix is_empty management, causes issues with malformed expressions
+        // maybe have a flag for malformed ?
         if let Some(token) = self.peeked_token.take() {
             Some(token)
         } else {
-            self.token_from_chars()
+            if let Some(token) = self.token_from_chars() {
+                Some(token)
+            } else {
+                None
+            }
         }
     }
     pub fn peek_token(&mut self) -> Option<Token> {
@@ -188,59 +195,60 @@ impl Lexer {
         self.peeked_token.clone()
     }
     fn token_from_chars(&mut self) -> Option<Token> {
-        while let Some(next_char) = self.next_char() {
-            if next_char == ' ' {
+        while let Some(peek_char) = self.peek_char() {
+            if peek_char == ' ' {
+                let _ = self.next_char();
                 continue;
             }
             let current_loc = self.current_loc.clone();
-            return match next_char {
+            return match peek_char {
                 '(' => Some(Token {
                     kind: TokenKind::OpenParen,
                     loc: current_loc,
-                    value: "(".to_string(),
+                    value: self.next_char().unwrap().to_string(),
                 }),
                 ')' => Some(Token {
                     kind: TokenKind::CloseParen,
                     loc: current_loc,
-                    value: ")".to_string(),
+                    value: self.next_char().unwrap().to_string(),
                 }),
                 '=' => Some(Token {
                     kind: TokenKind::Equals,
                     loc: current_loc,
-                    value: "=".to_string(),
+                    value: self.next_char().unwrap().to_string(),
                 }),
                 ',' => Some(Token {
                     kind: TokenKind::Comma,
                     loc: current_loc,
-                    value: ",".to_string(),
+                    value: self.next_char().unwrap().to_string(),
                 }),
                 '+' => Some(Token {
                     kind: TokenKind::Plus,
                     loc: current_loc,
-                    value: "+".to_string(),
+                    value: self.next_char().unwrap().to_string(),
                 }),
                 '-' => Some(Token {
                     kind: TokenKind::Min,
                     loc: current_loc,
-                    value: "-".to_string(),
+                    value: self.next_char().unwrap().to_string(),
                 }),
                 '*' => Some(Token {
                     kind: TokenKind::Mult,
                     loc: current_loc,
-                    value: "*".to_string(),
+                    value: self.next_char().unwrap().to_string(),
                 }),
                 '/' => Some(Token {
                     kind: TokenKind::Div,
                     loc: current_loc,
-                    value: "/".to_string(),
+                    value: self.next_char().unwrap().to_string(),
                 }),
                 '^' => Some(Token {
                     kind: TokenKind::Pow,
                     loc: current_loc,
-                    value: "^".to_string(),
+                    value: self.next_char().unwrap().to_string(),
                 }),
                 x if x.is_alphabetic() => {
-                    let mut temp = x.to_string();
+                    let mut temp = self.next_char().unwrap().to_string();
                     while let Some(next_char) = self.next_char_if(|x| x.is_alphanumeric()) {
                         temp.push(next_char)
                     }
@@ -252,7 +260,7 @@ impl Lexer {
                     })
                 }
                 x if x.is_numeric() => {
-                    let mut temp = x.to_string();
+                    let mut temp = self.next_char().unwrap().to_string();
                     let dec_sep = '.';
                     let mut found_dec_sep = false;
                     while let Some(next_char) =
@@ -274,7 +282,7 @@ impl Lexer {
                     if let Some(peeked_char) = self.peek_char() {
                         if peeked_char.is_alphabetic() {
                             self.diag.report(ParserError::UnexpectedChar {
-                                char: next_char,
+                                char: peek_char,
                                 loc: current_loc,
                             });
                             return None;
@@ -291,7 +299,6 @@ impl Lexer {
                         char: otherwise,
                         loc: current_loc,
                     });
-                    self.is_empty = false;
                     None
                 }
             };
@@ -337,13 +344,21 @@ impl Parser {
             depth: 0,
         }
     }
+
     fn parse_operand(&mut self) -> Option<Expr> {
         let token = self.lexer.expect_token_kinds(
             &[&[TokenKind::OpenParen], TokenKind::OPERANDS].concat(),
             "while parsing operand".to_string(),
         )?;
         match token.kind {
-            TokenKind::Ident => Some(Expr::Variable(token.value)),
+            TokenKind::Ident => {
+                if let Some(token) = self.lexer.peek_token() {
+                    if token.kind == TokenKind::OpenParen {
+                        return self.parse_functor(token.value);
+                    }
+                }
+                Some(Expr::Variable(token.value))
+            }
             TokenKind::NumLit => Some(Expr::Numeric(token.to_value())),
             TokenKind::OpenParen => {
                 let operand = self.parse_impl(false);
@@ -446,7 +461,7 @@ impl Parser {
     }
     pub fn parse(&mut self) -> Option<Expr> {
         if let Some(result) = self.parse_impl(false) {
-            if self.lexer.is_empty {
+            if self.lexer.is_empty() {
                 return Some(result);
             }
         }
@@ -509,7 +524,7 @@ impl Parser {
                         });
                         return None;
                     }
-                    let mut expr = self.parse_operand()?;
+                    let expr = self.parse_operand()?;
                     self.stash.push(expr);
                 }
                 x if x.is_operator() => {
