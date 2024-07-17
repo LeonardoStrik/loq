@@ -140,7 +140,27 @@ impl Expr {
                         },
                     };
                 }
-
+                let mut right = right.eval_recursive(env);
+                let mut op_kind = op_kind;
+                if right.is_num() {
+                    if right.expect_val("expected val on is_num==true") < 0.0 {
+                        match op_kind {
+                            OperatorKind::Plus => {
+                                op_kind = &OperatorKind::Min;
+                                right = Expr::Numeric(
+                                    -right.expect_val("expected val on is_num==true"),
+                                );
+                            }
+                            OperatorKind::Min => {
+                                op_kind = &OperatorKind::Plus;
+                                right = Expr::Numeric(
+                                    -right.expect_val("expected val on is_num==true"),
+                                );
+                            }
+                            _ => (),
+                        }
+                    }
+                }
                 Expr::BinOp {
                     op_kind: *op_kind,
                     left: Box::new(left.eval_recursive(env)),
@@ -202,7 +222,14 @@ impl Expr {
                     self.clone()
                 }
             }
-            Expr::Group(expr) => expr.eval_recursive(env),
+            Expr::Group(expr) => {
+                let expr = expr.eval_recursive(env);
+                if expr.is_num() {
+                    expr
+                } else {
+                    Expr::Group(Box::new(expr))
+                }
+            }
         }
     }
     pub fn expect_val(&self, msg: &str) -> f64 {
