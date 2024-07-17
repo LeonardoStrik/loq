@@ -62,6 +62,7 @@ pub enum Expr {
     },
     Numeric(f64),
     Variable(String),
+    Group(Box<Expr>),
 }
 impl Expr {
     pub fn eval(&self, env: &mut HashMap<String, Box<Expr>>) -> Expr {
@@ -153,6 +154,7 @@ impl Expr {
                     self.clone()
                 }
             }
+            Expr::Group(expr) => expr.eval_recursive(env),
         }
     }
     pub fn expect_val(&self, msg: &str) -> f64 {
@@ -187,7 +189,7 @@ impl fmt::Display for Expr {
                 op_kind,
                 left,
                 right,
-            } => write!(f, "({}{}{})", left, op_kind, right),
+            } => write!(f, "{}{}{}", left, op_kind, right),
             Expr::Fun { name, args } => {
                 let mut args_str = String::new();
                 for arg in args {
@@ -201,6 +203,7 @@ impl fmt::Display for Expr {
             }
             Expr::Numeric(value) => write!(f, "{}", value),
             Expr::Variable(name) => write!(f, "{}", name),
+            Expr::Group(expr) => write!(f, "({})", expr),
         }
     }
 }

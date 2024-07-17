@@ -352,8 +352,8 @@ impl Parser {
         )?;
         match token.kind {
             TokenKind::Ident => {
-                if let Some(token) = self.lexer.peek_token() {
-                    if token.kind == TokenKind::OpenParen {
+                if let Some(next_token) = self.lexer.peek_token() {
+                    if next_token.kind == TokenKind::OpenParen {
                         return self.parse_functor(token.value);
                     }
                 }
@@ -361,12 +361,12 @@ impl Parser {
             }
             TokenKind::NumLit => Some(Expr::Numeric(token.to_value())),
             TokenKind::OpenParen => {
-                let operand = self.parse_impl(false);
+                let operand = self.parse_impl(false)?;
                 let _ = self.lexer.expect_token_kinds(
                     &[TokenKind::CloseParen],
                     "while parsing expression between parentheses".to_string(),
                 )?;
-                operand
+                Some(Expr::Group(Box::new(operand)))
             }
             _ => None,
         }
@@ -474,6 +474,7 @@ impl Parser {
                 TokenKind::OpenParen => {
                     if let Some(stashed_expr) = self.stash.pop() {
                         {
+                            println!("matched stashed expr {}", stashed_expr);
                             match stashed_expr {
                                 Expr::Variable(name) => {
                                     self.depth -= 1;
@@ -499,7 +500,7 @@ impl Parser {
                         &[TokenKind::CloseParen],
                         "while parsing expression between parens".to_string(),
                     )?;
-                    self.stash.push(result)
+                    self.stash.push(Expr::Group(Box::new(result)))
                 }
                 TokenKind::CloseParen => {
                     break;
