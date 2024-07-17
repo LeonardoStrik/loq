@@ -379,6 +379,7 @@ impl Parser {
         if operator.kind == TokenKind::Equals {
             match left {
                 Expr::Variable(_) => (),
+                Expr::Fun { name: _, args: _ } => (),
                 _ => {
                     self.diag.report(ParserError::InvalidExpr {
                         loc: operator.loc,

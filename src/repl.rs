@@ -1,6 +1,5 @@
-use crate::expr::Expr;
+use crate::expr::{EvalEnv, Expr};
 use crate::lexer::Parser;
-use std::collections::HashMap;
 use std::io::{self, Stdout};
 use std::io::{Stdin, Write};
 use std::vec::Vec;
@@ -10,7 +9,7 @@ struct ReplEnv {
     stdout: Stdout,
     stdin: Stdin,
     quit: bool,
-    eval_env: HashMap<String, Box<Expr>>,
+    eval_env: EvalEnv,
 }
 impl ReplEnv {
     pub fn new() -> Self {
@@ -20,7 +19,7 @@ impl ReplEnv {
             stdin: io::stdin(),
             stdout: io::stdout(),
             quit: false,
-            eval_env: HashMap::new(),
+            eval_env: EvalEnv::new(),
         }
     }
     pub fn read_input(&mut self) -> io::Result<()> {

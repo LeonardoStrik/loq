@@ -1,9 +1,8 @@
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
 
     use crate::{
-        expr::Expr,
+        expr::EvalEnv,
         lexer::{Lexer, Parser, TokenKind},
     };
 
@@ -111,7 +110,7 @@ mod tests {
         fn test_expr_eval_on_string(input: &str, expected: f64) {
             let mut parser = Parser::from_string(input.to_string());
             let expr = parser.parse().expect("failed to parse expression");
-            let mut env = HashMap::new();
+            let mut env = EvalEnv::new();
             let val = expr.eval(&mut env).expect_val("could not evaluate expr");
             println!("{} evaluated to {}", expr, val);
 
@@ -157,13 +156,9 @@ mod tests {
 
     #[test]
     fn test_var_eval() {
-        let mut env = HashMap::new();
+        let mut env = EvalEnv::new();
 
-        fn test_var_eval_on_string(
-            input: &str,
-            env: &mut HashMap<String, Box<Expr>>,
-            expected: Option<f64>,
-        ) {
+        fn test_var_eval_on_string(input: &str, env: &mut EvalEnv, expected: Option<f64>) {
             let mut parser = Parser::from_string(input.to_string());
             let expr = parser.parse().expect("failed to parse expression");
             let val = expr.eval(env);
@@ -184,5 +179,31 @@ mod tests {
         test_var_eval_on_string("abcde=(1+2)*(3-4)^((2*3)^3*2)", &mut env, None);
         test_var_eval_on_string("a+abcde", &mut env, Some(5.0));
         end_test("var evaluation");
+    }
+    #[test]
+    fn test_fun_eval() {
+        let mut env = EvalEnv::new();
+
+        fn test_fun_eval_on_string(input: &str, env: &mut EvalEnv, expected: Option<f64>) {
+            let mut parser = Parser::from_string(input.to_string());
+            let expr = parser.parse().expect("failed to parse expression");
+            let val = expr.eval(env);
+            println!("{} evaluated to {}", expr, val);
+            if let Some(expected) = expected {
+                assert_eq!(
+                    val.expect_val("could not evaluate expr"),
+                    expected,
+                    "evaluating {} did not yield {}",
+                    expr,
+                    expected
+                );
+            }
+        }
+        start_test("fun evaluation");
+        test_fun_eval_on_string("f(a)=a", &mut env, None);
+        test_fun_eval_on_string("f(3)", &mut env, Some(3.0));
+        test_fun_eval_on_string("g(a,b)=(a+b)*(3-4)^((a*b)^3*2)", &mut env, None);
+        test_fun_eval_on_string("g(2,3)", &mut env, Some(5.0));
+        end_test("fun evaluation");
     }
 }

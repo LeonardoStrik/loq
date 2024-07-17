@@ -1,6 +1,6 @@
-use std::{collections::HashMap, fmt};
+use std::{collections::HashMap, fmt, iter::zip};
 
-use crate::lexer::TokenKind;
+use crate::{diag::Diagnoster, lexer::TokenKind};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum OperatorKind {
@@ -47,6 +47,21 @@ impl fmt::Display for OperatorKind {
         write!(f, "{}", output)
     }
 }
+
+pub struct EvalEnv {
+    vars: HashMap<String, Box<Expr>>,
+    funs: HashMap<String, Box<Expr>>,
+    diag: Diagnoster,
+}
+impl EvalEnv {
+    pub fn new() -> Self {
+        EvalEnv {
+            vars: HashMap::new(),
+            funs: HashMap::new(),
+            diag: Diagnoster {},
+        }
+    }
+}
 #[derive(Debug, Clone)]
 pub enum Expr {
     // TODO: Implement a way to somehow store parens, useful for: partial evaluation of symbolics, more readable printing
@@ -65,7 +80,7 @@ pub enum Expr {
     Group(Box<Expr>),
 }
 impl Expr {
-    pub fn eval(&self, env: &mut HashMap<String, Box<Expr>>) -> Expr {
+    pub fn eval(&self, env: &mut EvalEnv) -> Expr {
         // top-level entrypoint for evaluation, can insert variable declarations etc
         // this calls eval_recursive for further (non-mutable env) evaluation
         match self {
@@ -84,10 +99,10 @@ impl Expr {
 
                     match *left.clone() {
                         Expr::Fun { name, args: _ } => {
-                            env.insert(name, Box::new(expr.clone()));
+                            env.funs.insert(name, Box::new(expr.clone()));
                         }
                         Expr::Variable(name) => {
-                            env.insert(name, right);
+                            env.vars.insert(name, right);
                         }
                         _ => panic!("Invalid expression, should not have been parsed"),
                     };
@@ -96,17 +111,10 @@ impl Expr {
                     self.eval_recursive(env)
                 }
             }
-            Expr::Variable(name) => {
-                if let Some(val) = env.get(name) {
-                    *val.clone()
-                } else {
-                    self.eval_recursive(env)
-                }
-            }
             _ => self.eval_recursive(env),
         }
     }
-    fn eval_recursive(&self, env: &HashMap<String, Box<Expr>>) -> Expr {
+    fn eval_recursive(&self, env: &EvalEnv) -> Expr {
         // evaluates expressions without evaluating equalities, therefore does not need a mut env
         match self {
             Expr::BinOp {
@@ -139,16 +147,50 @@ impl Expr {
                     right: Box::new(right.eval_recursive(env)),
                 }
             }
-            Expr::Fun { name, args: _ } => {
-                if let Some(val) = env.get(name) {
-                    *val.clone()
+            Expr::Fun {
+                name: eval_name,
+                args: eval_args,
+            } => {
+                if let Some(val) = env.funs.get(eval_name) {
+                    match *val.clone() {
+                        Expr::BinOp {
+                            op_kind: _,
+                            left,
+                            right,
+                        } => {
+                            if let Expr::Fun { name: _, args } = *left.clone() {
+                                //TODO: lot more checking for proper functions, e.g. whether all args are symbolic
+                                // TODO: potentially evaluate duplicate expressions in parsing already?
+                                //  makes the overhead bigger and introduces a need for an env there too, but I'm not a fan of accepting invalid expressions
+                                // TODO: Find a more convenient way to save functions and evaluate them
+                                if args.len() == eval_args.len() {
+                                    let mut temp_env = EvalEnv::new();
+                                    for (arg_name, arg_value) in zip(args, eval_args) {
+                                        let arg_name = arg_name
+                                            .expect_name("function argument not a variable");
+                                        temp_env
+                                            .vars
+                                            .insert(arg_name.clone(), Box::new(arg_value.clone()));
+                                    }
+                                    return Expr::BinOp {
+                                        op_kind: OperatorKind::Equals,
+                                        left: left,
+                                        right: Box::new(right.eval_recursive(&temp_env)),
+                                    };
+                                }
+                            }
+                            return Expr::Numeric(1.0);
+                        }
+
+                        _ => panic!("didn't find BinOp in stashed function definition"),
+                    }
                 } else {
                     self.clone()
                 }
             }
             Expr::Numeric(_) => self.clone(),
             Expr::Variable(name) => {
-                if let Some(val) = env.get(name) {
+                if let Some(val) = env.vars.get(name) {
                     *val.clone()
                 } else {
                     self.clone()
