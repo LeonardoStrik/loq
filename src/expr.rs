@@ -172,10 +172,16 @@ impl Expr {
                                             .vars
                                             .insert(arg_name.clone(), Box::new(arg_value.clone()));
                                     }
-                                    return Expr::BinOp {
-                                        op_kind: OperatorKind::Equals,
-                                        left: left,
-                                        right: Box::new(right.eval_recursive(&temp_env)),
+
+                                    let right = right.eval_recursive(&temp_env);
+                                    if right.is_num() {
+                                        return right;
+                                    } else {
+                                        return Expr::BinOp {
+                                            op_kind: OperatorKind::Equals,
+                                            left: left,
+                                            right: Box::new(right.eval_recursive(&temp_env)),
+                                        };
                                     };
                                 }
                             }
