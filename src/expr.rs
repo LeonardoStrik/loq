@@ -90,23 +90,22 @@ impl Expr {
                 right,
             } => {
                 if *op_kind == OperatorKind::Equals {
-                    let right = Box::new(right.eval_recursive(env));
-                    let expr = Expr::BinOp {
-                        op_kind: *op_kind,
-                        left: left.clone(),
-                        right: right.clone(),
-                    };
-
+                    let mut right = right.clone();
                     match *left.clone() {
                         Expr::Fun { name, args: _ } => {
-                            env.funs.insert(name, Box::new(expr.clone()));
+                            env.funs.insert(name, Box::new(self.clone()));
                         }
                         Expr::Variable(name) => {
-                            env.vars.insert(name, right);
+                            right = Box::new(right.eval_recursive(env));
+                            env.vars.insert(name, right.clone());
                         }
                         _ => panic!("Invalid expression, should not have been parsed"),
                     };
-                    expr
+                    Expr::BinOp {
+                        op_kind: *op_kind,
+                        left: left.clone(),
+                        right: right.clone(),
+                    }
                 } else {
                     self.eval_recursive(env)
                 }
@@ -193,7 +192,10 @@ impl Expr {
                                             .insert(arg_name.clone(), Box::new(arg_value.clone()));
                                     }
 
-                                    let right = right.eval_recursive(&temp_env);
+                                    let mut right = right.eval_recursive(&temp_env);
+                                    if !right.is_num() {
+                                        right = right.eval_recursive(env);
+                                    }
                                     if right.is_num() {
                                         return right;
                                     } else {

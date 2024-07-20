@@ -161,6 +161,7 @@ mod tests {
         fn test_var_eval_on_string(input: &str, env: &mut EvalEnv, expected: Option<f64>) {
             let mut parser = Parser::from_string(input.to_string());
             let expr = parser.parse().expect("failed to parse expression");
+            println!("{}", expr);
             let val = expr.eval(env);
             println!("{} evaluated to {}", expr, val);
             if let Some(expected) = expected {
@@ -178,6 +179,10 @@ mod tests {
         test_var_eval_on_string("a", &mut env, Some(2.0));
         test_var_eval_on_string("abcde=(1+2)*(3-4)^((2*3)^3*2)", &mut env, None);
         test_var_eval_on_string("a+abcde", &mut env, Some(5.0));
+        test_var_eval_on_string("b=10", &mut env, None);
+        test_var_eval_on_string("c=15", &mut env, None);
+        test_var_eval_on_string("d=b+c", &mut env, None);
+        test_var_eval_on_string("d", &mut env, Some(25.0));
         end_test("var evaluation");
     }
     #[test]
@@ -204,6 +209,9 @@ mod tests {
         test_fun_eval_on_string("f(3)", &mut env, Some(3.0));
         test_fun_eval_on_string("g(a,b)=(a+b)*(3-4)^((a*b)^3*2)", &mut env, None);
         test_fun_eval_on_string("g(2,3)", &mut env, Some(5.0));
+        test_fun_eval_on_string("h(a,b)=a+b+c", &mut env, None);
+        test_fun_eval_on_string("c=10", &mut env, None);
+        test_fun_eval_on_string("h(1,2)", &mut env, Some(13.0));
         end_test("fun evaluation");
     }
 }
