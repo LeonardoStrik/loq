@@ -2,7 +2,7 @@
 mod tests {
 
     use crate::{
-        expr::EvalEnv,
+        expr::{EvalEnv, Expr},
         lexer::{Lexer, Parser, TokenKind},
     };
 
@@ -231,5 +231,32 @@ mod tests {
         test_fun_eval_on_string("c=10", &mut eval_env, None);
         test_fun_eval_on_string("h(1,2)", &mut eval_env, Some(13.0));
         end_test("fun evaluation");
+    }
+    #[test]
+    fn test_file_parsing() {
+        fn test_file_eval(input_path: &str, env: &mut EvalEnv, expected: Option<f64>) {
+            let mut parser =
+                Parser::from_file(input_path).expect("failed file read while testing file parsing");
+            let mut val = Expr::Variable("default".to_string());
+            while let Some(expr) = parser.parse() {
+                val = expr.eval(env);
+                println!("{} evaluated to {}", expr, val);
+            }
+            if let Some(expected) = expected {
+                assert_eq!(
+                    val.expect_val("could not evaluate expr"),
+                    expected,
+                    "evaluating {} did not yield {}",
+                    input_path,
+                    expected
+                );
+            }
+        }
+        start_test("file parsing/evaluation");
+        let mut env = EvalEnv::new();
+        test_file_eval("./src/test/file_parsing/test1.txt", &mut env, Some(62.0));
+
+        // test_file_eval_on_string("", &mut env,None);
+        end_test("file parsing/evaluation");
     }
 }

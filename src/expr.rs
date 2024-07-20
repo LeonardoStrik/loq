@@ -236,7 +236,7 @@ impl Expr {
     pub fn expect_val(&self, msg: &str) -> f64 {
         match self {
             Expr::Numeric(val) => *val,
-            _ => panic!("{}", msg),
+            _ => panic!("Called expect _val on {}, with message: {}", self, msg),
         }
     }
     pub fn expect_name(&self, msg: &str) -> &String {

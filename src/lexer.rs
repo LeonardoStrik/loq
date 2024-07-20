@@ -1,5 +1,6 @@
 use std::fmt::{self};
 use std::string::String;
+use std::{fmt, fs};
 
 use crate::diag::ParserError;
 use crate::expr::EvalEnv;
@@ -28,7 +29,9 @@ impl Loc {
 
 pub enum TokenKind {
     // TODO: would like to somehow refactor away the need for double definition of operators
-    // `parentheses`
+    // EOL
+    EOL,
+    // parentheses
     OpenParen,
     CloseParen,
     //separators
@@ -87,6 +90,7 @@ impl fmt::Display for TokenKind {
             TokenKind::Equals => "=",
             TokenKind::Ident => "Ident",
             TokenKind::NumLit => "NumLit",
+            TokenKind::EOL => "\n",
         };
 
         write!(f, "{}", output)
@@ -203,6 +207,11 @@ impl Lexer {
             }
             let current_loc = self.current_loc.clone();
             return match peek_char {
+                '\n' => Some(Token {
+                    kind: TokenKind::EOL,
+                    loc: current_loc,
+                    value: self.next_char().unwrap().to_string(),
+                }),
                 '(' => Some(Token {
                     kind: TokenKind::OpenParen,
                     loc: current_loc,
@@ -345,6 +354,16 @@ impl Parser {
             depth: 0,
         }
     }
+    pub fn from_file(input_path: &str) -> Option<Self> {
+        let input = fs::read_to_string(input_path).ok()?;
+        let input = input.replace("\r", "");
+        Some(Parser {
+            lexer: Lexer::from_string(input),
+            stash: vec![],
+            diag: Diagnoster {},
+            depth: 0,
+        })
+    }
 
     fn parse_operand(&mut self, eval_env: &EvalEnv) -> Option<Expr> {
         let token = self.lexer.expect_token_kinds(
@@ -411,7 +430,7 @@ impl Parser {
                         break;
                     }
                 }
-
+                TokenKind::EOL => break,
                 _ => {
                     self.diag.report(ParserError::UnexpectedToken {
                         found: token,
@@ -488,54 +507,64 @@ impl Parser {
         None
     }
     pub fn parse(&mut self, eval_env: &EvalEnv) -> Option<Expr> {
+        assert!(
+            self.stash.is_empty(),
+            "Expected stash to be empty when starting parsing, must be an implementation error"
+        );
         if let Some(result) = self.parse_impl(eval_env, false) {
-            if self.lexer.is_empty() {
-                // if result is a function definition, check whether all parameters are used
-                if let Expr::BinOp {
-                    op_kind,
-                    left,
-                    right,
-                } = result.clone()
-                {
-                    if op_kind == OperatorKind::Equals {
-                        if let Expr::Fun { name, params: args } = *left.clone() {
-                            if right.get_fun_names().contains(&name) {
-                                self.diag.report(ParserError::RecusiveFuncDef {
-                                    func_def: Box::new(result),
-                                });
-                                return None;
-                            }
-                            let used_vars = right.get_var_names();
-                            let mut unused_params = vec![];
-                            for param in args {
-                                match param {
-                                    Expr::Variable(name) => {
-                                        if !used_vars.contains(&name) {
-                                            unused_params.push(name)
-                                        }
-                                    }
-                                    _ => {
-                                        self.diag.report(ParserError::InvalidFuncParam {
-                                            found: Box::new(param),
-                                            while_doing: format!("parsing {}", result),
-                                        });
-                                        return None;
+            if !self.lexer.is_empty() {
+                if let None = self.lexer.expect_token_kinds(
+                    &[TokenKind::EOL],
+                    "while returning from parsing".to_string(),
+                ) {
+                    return None;
+                }
+            }
+            // if result is a function definition, check whether all parameters are used
+            if let Expr::BinOp {
+                op_kind,
+                left,
+                right,
+            } = result.clone()
+            {
+                if op_kind == OperatorKind::Equals {
+                    if let Expr::Fun { name, params: args } = *left.clone() {
+                        if right.get_fun_names().contains(&name) {
+                            self.diag.report(ParserError::RecusiveFuncDef {
+                                func_def: Box::new(result),
+                            });
+                            return None;
+                        }
+                        let used_vars = right.get_var_names();
+                        let mut unused_params = vec![];
+                        for param in args {
+                            match param {
+                                Expr::Variable(name) => {
+                                    if !used_vars.contains(&name) {
+                                        unused_params.push(name)
                                     }
                                 }
+                                _ => {
+                                    self.diag.report(ParserError::InvalidFuncParam {
+                                        found: Box::new(param),
+                                        while_doing: format!("parsing {}", result),
+                                    });
+                                    return None;
+                                }
                             }
-                            if unused_params.len() > 0 {
-                                self.diag.report(ParserError::UnusedParams {
-                                    functor: left,
-                                    func_def: right,
-                                    unused_params,
-                                });
-                                return None;
-                            }
+                        }
+                        if unused_params.len() > 0 {
+                            self.diag.report(ParserError::UnusedParams {
+                                functor: left,
+                                func_def: right,
+                                unused_params,
+                            });
+                            return None;
                         }
                     }
                 }
-                return Some(result);
             }
+            return Some(result);
         }
         None
     }
@@ -543,6 +572,9 @@ impl Parser {
         self.depth += 1;
         while let Some(peek_token) = self.lexer.peek_token() {
             match peek_token.kind {
+                TokenKind::EOL => {
+                    break;
+                }
                 TokenKind::OpenParen => {
                     if let Some(stashed_expr) = self.stash.pop() {
                         {
@@ -616,7 +648,12 @@ impl Parser {
                     let expr = self.parse_binop(left, eval_env)?;
                     self.stash.push(expr)
                 }
-                _ => {
+                TokenKind::Equals
+                | TokenKind::Mult
+                | TokenKind::Div
+                | TokenKind::Plus
+                | TokenKind::Min
+                | TokenKind::Pow => {
                     let msg = match parsing_args {
                         true => "parsing function arguments",
                         false => "parsing",
