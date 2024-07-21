@@ -145,17 +145,30 @@ mod tests {
     #[test]
     fn test_functor_parsing() {
         start_test("functor parsing");
-        fn test_functor_parsing_on_str(input: &str) {
+        fn test_functor_parsing_on_str(input: &str, eval_env: &mut EvalEnv, should_fail: bool) {
             let mut parser = Parser::from_string(input.to_string());
-            let eval_env = EvalEnv::new();
-            let expr = parser.parse(&eval_env).expect("failed to parse expression");
-            println!("input: {} Evaluated to: {}", input, expr)
+            let expr = parser.parse(&eval_env);
+            if should_fail {
+                return assert!(expr.is_none(), "expected to fail while parsing {}", input);
+            } else {
+                let expr = expr.expect("failed to parse expression");
+                let val = expr.eval(eval_env);
+                println!("input: {} parsed to: {}, evaluated to:{}", input, expr, val);
+            }
         }
-        test_functor_parsing_on_str("f(1,2,3)");
-        test_functor_parsing_on_str("g(a,b,c)");
-        test_functor_parsing_on_str("f(1,a,3)");
-        test_functor_parsing_on_str("f(1,g(2))");
-        // test_functor_parsing_on_str("");
+        let mut eval_env = EvalEnv::new();
+        test_functor_parsing_on_str("f(1,2,3)", &mut eval_env, false);
+        test_functor_parsing_on_str("g(a,b,c)", &mut eval_env, false);
+        test_functor_parsing_on_str("f(1,a,3)", &mut eval_env, false);
+        test_functor_parsing_on_str("f(1,g(2))", &mut eval_env, false);
+        test_functor_parsing_on_str("f(1,a)=a", &mut eval_env, true);
+        test_functor_parsing_on_str("f(a,b)=a", &mut eval_env, true);
+        test_functor_parsing_on_str("f(a,b)=f(a,b)", &mut eval_env, true);
+        test_functor_parsing_on_str("f(a)=a", &mut eval_env, false);
+        test_functor_parsing_on_str("f(1,2)", &mut eval_env, true);
+        test_functor_parsing_on_str("f(a,b)=(b+(a-(f(1,2))", &mut eval_env, true);
+
+        // test_functor_parsing_on_str("", &mut eval_env, false);
         end_test("functor parsing");
     }
 

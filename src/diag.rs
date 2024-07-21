@@ -53,11 +53,15 @@ impl Diagnoster {
                 eprintln!("TODO: report UnusedParams");
                 return;
             }
-            ParserError::InvalidFunParam {
+            ParserError::InvalidFuncParam {
                 found: _,
                 while_doing: _,
             } => {
                 eprintln!("TODO: report invalid function arguments");
+                return;
+            }
+            ParserError::RecusiveFuncDef { func_def: _ } => {
+                eprintln!("TODO: report recursive function definition");
                 return;
             }
         };
@@ -99,9 +103,12 @@ pub enum ParserError {
         func_def: Box<Expr>,
         unused_params: Vec<String>,
     },
-    InvalidFunParam {
+    InvalidFuncParam {
         found: Box<Expr>,
         while_doing: String,
+    },
+    RecusiveFuncDef {
+        func_def: Box<Expr>,
     },
 }
 fn pretty_enumerate<T: std::fmt::Display>(items: &Vec<T>) -> String {
@@ -165,9 +172,13 @@ impl fmt::Display for ParserError {
                 func_def,
                 pretty_enumerate(unused_params)
             ),
-            ParserError::InvalidFunParam { found, while_doing } => &format!(
+            ParserError::InvalidFuncParam { found, while_doing } => &format!(
                 "Found {}, which is not a valid parameter, while {}.",
                 found, while_doing
+            ),
+            ParserError::RecusiveFuncDef { func_def } => &format!(
+                "Found function definition {}, which is recursive..",
+                func_def
             ),
         };
         write!(f, "{}", out)

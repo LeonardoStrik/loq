@@ -498,11 +498,13 @@ impl Parser {
                 } = result.clone()
                 {
                     if op_kind == OperatorKind::Equals {
-                        if let Expr::Fun {
-                            name: _,
-                            params: args,
-                        } = *left.clone()
-                        {
+                        if let Expr::Fun { name, params: args } = *left.clone() {
+                            if right.get_fun_names().contains(&name) {
+                                self.diag.report(ParserError::RecusiveFuncDef {
+                                    func_def: Box::new(result),
+                                });
+                                return None;
+                            }
                             let used_vars = right.get_var_names();
                             let mut unused_params = vec![];
                             for param in args {
@@ -513,7 +515,7 @@ impl Parser {
                                         }
                                     }
                                     _ => {
-                                        self.diag.report(ParserError::InvalidFunParam {
+                                        self.diag.report(ParserError::InvalidFuncParam {
                                             found: Box::new(param),
                                             while_doing: format!("parsing {}", result),
                                         });

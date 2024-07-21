@@ -278,6 +278,21 @@ impl Expr {
             Expr::Group(expr) => expr.get_var_names(),
         }
     }
+    pub fn get_fun_names(&self) -> Vec<String> {
+        match self {
+            Expr::BinOp {
+                op_kind: _,
+                left,
+                right,
+            } => [left.get_fun_names(), right.get_fun_names()].concat(),
+            Expr::Fun { name, params: _ } => {
+                return vec![name.clone()];
+            }
+            Expr::Numeric(_) => vec![],
+            Expr::Variable(_) => vec![],
+            Expr::Group(expr) => expr.get_fun_names(),
+        }
+    }
 }
 impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
