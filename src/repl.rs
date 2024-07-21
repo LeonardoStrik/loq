@@ -33,27 +33,27 @@ impl ReplEnv {
     }
 }
 pub fn repl() -> io::Result<()> {
-    let mut env = ReplEnv::new();
+    let mut repl_env = ReplEnv::new();
 
-    while !env.quit {
-        env.read_input()?;
-        match env.input.as_str() {
+    while !repl_env.quit {
+        repl_env.read_input()?;
+        match repl_env.input.as_str() {
             "quit;" | "q;" => break,
             // "clear;" | "c;" => {
             //     buffer.clear();
-            //     env.history.clear();
+            //     repl_env.history.clear();
             // }
             // "undo;" | "u;" => {
-            //     let _ = env.history.pop();
-            //     match env.history.pop() {
+            //     let _ = repl_env.history.pop();
+            //     match repl_env.history.pop() {
             //         Some(x) => buffer.truncate(buffer.len() - x.len()),
             //         None => println!("ERROR: Nothing to undo!"),
             //     };
             // }
             input => {
                 let mut parser = Parser::from_string(input.to_string());
-                if let Some(expr) = parser.parse() {
-                    match expr.eval(&mut env.eval_env) {
+                if let Some(expr) = parser.parse(&repl_env.eval_env) {
+                    match expr.eval(&mut repl_env.eval_env) {
                         Expr::Numeric(val) => println!("  =>value:  {}", val),
                         otherwise => println!("  =>symbolic  {}", otherwise),
                     }

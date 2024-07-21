@@ -1,7 +1,8 @@
-use std::fmt;
+use std::fmt::{self};
 use std::string::String;
 
 use crate::diag::ParserError;
+use crate::expr::EvalEnv;
 use crate::{
     diag::Diagnoster,
     expr::{Expr, OperatorKind},
@@ -345,7 +346,7 @@ impl Parser {
         }
     }
 
-    fn parse_operand(&mut self) -> Option<Expr> {
+    fn parse_operand(&mut self, eval_env: &EvalEnv) -> Option<Expr> {
         let token = self.lexer.expect_token_kinds(
             &[&[TokenKind::OpenParen], TokenKind::OPERANDS].concat(),
             "while parsing operand".to_string(),
@@ -354,14 +355,14 @@ impl Parser {
             TokenKind::Ident => {
                 if let Some(next_token) = self.lexer.peek_token() {
                     if next_token.kind == TokenKind::OpenParen {
-                        return self.parse_functor(token.value);
+                        return self.parse_functor(token.value, eval_env);
                     }
                 }
                 Some(Expr::Variable(token.value))
             }
             TokenKind::NumLit => Some(Expr::Numeric(token.to_value())),
             TokenKind::OpenParen => {
-                let operand = self.parse_impl(false)?;
+                let operand = self.parse_impl(eval_env, false)?;
                 let _ = self.lexer.expect_token_kinds(
                     &[TokenKind::CloseParen],
                     "while parsing expression between parentheses".to_string(),
@@ -371,7 +372,7 @@ impl Parser {
             _ => None,
         }
     }
-    fn parse_binop(&mut self, left: Expr) -> Option<Expr> {
+    fn parse_binop(&mut self, left: Expr, eval_env: &EvalEnv) -> Option<Expr> {
         let operator = self.lexer.expect_token_kinds(
             TokenKind::OPERATORS,
             "while parsing binary operator".to_string(),
@@ -379,7 +380,7 @@ impl Parser {
         if operator.kind == TokenKind::Equals {
             match left {
                 Expr::Variable(_) => (),
-                Expr::Fun { name: _, args: _ } => (),
+                Expr::Fun { name: _, params: _ } => (),
                 _ => {
                     self.diag.report(ParserError::InvalidExpr {
                         loc: operator.loc,
@@ -390,7 +391,7 @@ impl Parser {
                 }
             }
         }
-        let right = self.parse_operand()?;
+        let right = self.parse_operand(eval_env)?;
         while let Some(token) = self.lexer.peek_token() {
             match token.kind {
                 TokenKind::CloseParen => break,
@@ -398,11 +399,11 @@ impl Parser {
                     if x.get_precedence() < operator.kind.get_precedence() {
                         match self.stash.pop() {
                             Some(prev_expr) => {
-                                let temp_right = self.parse_binop(prev_expr)?;
+                                let temp_right = self.parse_binop(prev_expr, eval_env)?;
                                 self.stash.push(temp_right)
                             }
                             None => {
-                                let temp_right = self.parse_binop(right.clone())?;
+                                let temp_right = self.parse_binop(right.clone(), eval_env)?;
                                 self.stash.push(temp_right)
                             }
                         }
@@ -437,38 +438,80 @@ impl Parser {
             }
         }
     }
-    fn parse_functor(&mut self, name: String) -> Option<Expr> {
+    fn parse_functor(&mut self, name: String, eval_env: &EvalEnv) -> Option<Expr> {
         let _ = self
             .lexer
             .expect_token_kinds(&[TokenKind::OpenParen], "while parsing functor".to_string())?;
         let mut args = vec![];
         while let Some(_) = self.lexer.peek_token() {
-            if let Some(arg) = self.parse_impl(true) {
+            if let Some(arg) = self.parse_impl(eval_env, true) {
                 args.push(arg);
                 let token = self.lexer.expect_token_kinds(
                     &[TokenKind::CloseParen, TokenKind::Comma],
                     "while parsing functor".to_string(),
                 )?;
                 match token.kind {
-                    TokenKind::CloseParen => return Some(Expr::Fun { name, args }),
+                    TokenKind::CloseParen => return Some(Expr::Fun { name, params: args }),
                     TokenKind::Comma => continue,
                     _ => panic!("found not comma or close paren while expecting them"),
                 }
             } else {
-                return Some(Expr::Fun { name, args });
+                return Some(Expr::Fun { name, params: args });
             }
         }
         None
     }
-    pub fn parse(&mut self) -> Option<Expr> {
-        if let Some(result) = self.parse_impl(false) {
+    pub fn parse(&mut self, eval_env: &EvalEnv) -> Option<Expr> {
+        if let Some(result) = self.parse_impl(eval_env, false) {
             if self.lexer.is_empty() {
+                // if result is a function definition, check whether all parameters are used
+                if let Expr::BinOp {
+                    op_kind,
+                    left,
+                    right,
+                } = result.clone()
+                {
+                    if op_kind == OperatorKind::Equals {
+                        if let Expr::Fun {
+                            name: _,
+                            params: args,
+                        } = *left.clone()
+                        {
+                            let used_vars = right.get_var_names();
+                            let mut unused_params = vec![];
+                            for param in args {
+                                match param {
+                                    Expr::Variable(name) => {
+                                        if !used_vars.contains(&name) {
+                                            unused_params.push(name)
+                                        }
+                                    }
+                                    _ => {
+                                        self.diag.report(ParserError::InvalidFunParam {
+                                            found: Box::new(param),
+                                            while_doing: format!("parsing {}", result),
+                                        });
+                                        return None;
+                                    }
+                                }
+                            }
+                            if unused_params.len() > 0 {
+                                self.diag.report(ParserError::UnusedParams {
+                                    functor: left,
+                                    func_def: right,
+                                    unused_params,
+                                });
+                                return None;
+                            }
+                        }
+                    }
+                }
                 return Some(result);
             }
         }
         None
     }
-    fn parse_impl(&mut self, parsing_args: bool) -> Option<Expr> {
+    fn parse_impl(&mut self, eval_env: &EvalEnv, parsing_args: bool) -> Option<Expr> {
         self.depth += 1;
         while let Some(peek_token) = self.lexer.peek_token() {
             match peek_token.kind {
@@ -479,7 +522,7 @@ impl Parser {
                             match stashed_expr {
                                 Expr::Variable(name) => {
                                     self.depth -= 1;
-                                    return self.parse_functor(name);
+                                    return self.parse_functor(name, eval_env);
                                 }
 
                                 _ => {
@@ -496,7 +539,7 @@ impl Parser {
                         }
                     }
                     self.lexer.drop_token();
-                    let result = self.parse_impl(false)?;
+                    let result = self.parse_impl(eval_env, false)?;
                     let _ = self.lexer.expect_token_kinds(
                         &[TokenKind::CloseParen],
                         "while parsing expression between parens".to_string(),
@@ -526,7 +569,7 @@ impl Parser {
                         });
                         return None;
                     }
-                    let expr = self.parse_operand()?;
+                    let expr = self.parse_operand(eval_env)?;
                     self.stash.push(expr);
                 }
                 x if x.is_operator() => {
@@ -542,7 +585,7 @@ impl Parser {
                         return None;
                     }
                     let left = self.stash.pop()?;
-                    let expr = self.parse_binop(left)?;
+                    let expr = self.parse_binop(left, eval_env)?;
                     self.stash.push(expr)
                 }
                 _ => {

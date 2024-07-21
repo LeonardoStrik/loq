@@ -62,10 +62,8 @@ impl EvalEnv {
         }
     }
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
-    // TODO: Implement a way to somehow store parens, useful for: partial evaluation of symbolics, more readable printing
-    // TODO: decouple Exprs from tokens to simplify evaluation? feels like a cleaner way to represent an Expr anyway, if you were to store/use them then the old Token info is not relevant anyway
     BinOp {
         op_kind: OperatorKind,
         left: Box<Expr>,
@@ -73,16 +71,16 @@ pub enum Expr {
     },
     Fun {
         name: String,
-        args: Vec<Expr>,
+        params: Vec<Expr>,
     },
     Numeric(f64),
     Variable(String),
     Group(Box<Expr>),
 }
 impl Expr {
-    pub fn eval(&self, env: &mut EvalEnv) -> Expr {
+    pub fn eval(&self, eval_env: &mut EvalEnv) -> Expr {
         // top-level entrypoint for evaluation, can insert variable declarations etc
-        // this calls eval_recursive for further (non-mutable env) evaluation
+        // this calls eval_recursive for further (non-mutable eval_env) evaluation
         match self {
             Expr::BinOp {
                 op_kind,
@@ -92,12 +90,12 @@ impl Expr {
                 if *op_kind == OperatorKind::Equals {
                     let mut right = right.clone();
                     match *left.clone() {
-                        Expr::Fun { name, args: _ } => {
-                            env.funs.insert(name, Box::new(self.clone()));
+                        Expr::Fun { name, params: _ } => {
+                            eval_env.funs.insert(name, Box::new(self.clone()));
                         }
                         Expr::Variable(name) => {
-                            right = Box::new(right.eval_recursive(env));
-                            env.vars.insert(name, right.clone());
+                            right = Box::new(right.eval_recursive(eval_env));
+                            eval_env.vars.insert(name, right.clone());
                         }
                         _ => panic!("Invalid expression, should not have been parsed"),
                     };
@@ -107,22 +105,22 @@ impl Expr {
                         right: right.clone(),
                     }
                 } else {
-                    self.eval_recursive(env)
+                    self.eval_recursive(eval_env)
                 }
             }
-            _ => self.eval_recursive(env),
+            _ => self.eval_recursive(eval_env),
         }
     }
-    fn eval_recursive(&self, env: &EvalEnv) -> Expr {
-        // evaluates expressions without evaluating equalities, therefore does not need a mut env
+    fn eval_recursive(&self, eval_env: &EvalEnv) -> Expr {
+        // evaluates expressions without evaluating equalities, therefore does not need a mut eval_env
         match self {
             Expr::BinOp {
                 op_kind,
                 left,
                 right,
             } => {
-                let a = left.eval_recursive(env);
-                let b = right.eval_recursive(env);
+                let a = left.eval_recursive(eval_env);
+                let b = right.eval_recursive(eval_env);
                 if a.is_num() && b.is_num() {
                     let a = a.expect_val("expect val on is_num==true");
                     let b = b.expect_val("expect val on is_num==true");
@@ -134,12 +132,12 @@ impl Expr {
                         OperatorKind::Pow => Expr::Numeric(a.powf(b)),
                         OperatorKind::Equals => Expr::BinOp {
                             op_kind: *op_kind,
-                            left: Box::new(left.eval_recursive(env)),
-                            right: Box::new(right.eval_recursive(env)),
+                            left: Box::new(left.eval_recursive(eval_env)),
+                            right: Box::new(right.eval_recursive(eval_env)),
                         },
                     };
                 }
-                let mut right = right.eval_recursive(env);
+                let mut right = right.eval_recursive(eval_env);
                 let mut op_kind = op_kind;
                 if right.is_num() {
                     if right.expect_val("expected val on is_num==true") < 0.0 {
@@ -162,39 +160,43 @@ impl Expr {
                 }
                 Expr::BinOp {
                     op_kind: *op_kind,
-                    left: Box::new(left.eval_recursive(env)),
-                    right: Box::new(right.eval_recursive(env)),
+                    left: Box::new(left.eval_recursive(eval_env)),
+                    right: Box::new(right.eval_recursive(eval_env)),
                 }
             }
             Expr::Fun {
                 name: eval_name,
-                args: eval_args,
+                params: eval_args,
             } => {
-                if let Some(val) = env.funs.get(eval_name) {
+                if let Some(val) = eval_env.funs.get(eval_name) {
                     match *val.clone() {
                         Expr::BinOp {
                             op_kind: _,
                             left,
                             right,
                         } => {
-                            if let Expr::Fun { name: _, args } = *left.clone() {
+                            if let Expr::Fun {
+                                name: _,
+                                params: args,
+                            } = *left.clone()
+                            {
                                 //TODO: lot more checking for proper functions, e.g. whether all args are symbolic
                                 // TODO: potentially evaluate duplicate expressions in parsing already?
-                                //  makes the overhead bigger and introduces a need for an env there too, but I'm not a fan of accepting invalid expressions
+                                //  makes the overhead bigger and introduces a need for an eval_env there too, but I'm not a fan of accepting invalid expressions
                                 // TODO: Find a more convenient way to save functions and evaluate them
                                 if args.len() == eval_args.len() {
-                                    let mut temp_env = EvalEnv::new();
+                                    let mut temp_eval_env = EvalEnv::new();
                                     for (arg_name, arg_value) in zip(args, eval_args) {
                                         let arg_name = arg_name
                                             .expect_name("function argument not a variable");
-                                        temp_env
+                                        temp_eval_env
                                             .vars
                                             .insert(arg_name.clone(), Box::new(arg_value.clone()));
                                     }
 
-                                    let mut right = right.eval_recursive(&temp_env);
+                                    let mut right = right.eval_recursive(&temp_eval_env);
                                     if !right.is_num() {
-                                        right = right.eval_recursive(env);
+                                        right = right.eval_recursive(eval_env);
                                     }
                                     if right.is_num() {
                                         return right;
@@ -202,12 +204,12 @@ impl Expr {
                                         return Expr::BinOp {
                                             op_kind: OperatorKind::Equals,
                                             left: left,
-                                            right: Box::new(right.eval_recursive(&temp_env)),
+                                            right: Box::new(right.eval_recursive(&temp_eval_env)),
                                         };
                                     };
                                 }
                             }
-                            return Expr::Numeric(1.0);
+                            todo!("not sure how to handle this");
                         }
 
                         _ => panic!("didn't find BinOp in stashed function definition"),
@@ -218,14 +220,14 @@ impl Expr {
             }
             Expr::Numeric(_) => self.clone(),
             Expr::Variable(name) => {
-                if let Some(val) = env.vars.get(name) {
+                if let Some(val) = eval_env.vars.get(name) {
                     *val.clone()
                 } else {
                     self.clone()
                 }
             }
             Expr::Group(expr) => {
-                let expr = expr.eval_recursive(env);
+                let expr = expr.eval_recursive(eval_env);
                 if expr.is_num() {
                     expr
                 } else {
@@ -258,6 +260,27 @@ impl Expr {
             _ => false,
         }
     }
+    pub fn get_var_names(&self) -> Vec<String> {
+        match self {
+            Expr::BinOp {
+                op_kind: _,
+                left,
+                right,
+            } => [left.get_var_names(), right.get_var_names()].concat(),
+            Expr::Fun { name: _, params } => {
+                let mut result = vec![];
+                for param in params {
+                    if let Expr::Variable(name) = param {
+                        result.push(name.clone());
+                    }
+                }
+                result
+            }
+            Expr::Numeric(_) => vec![],
+            Expr::Variable(name) => vec![name.clone()],
+            Expr::Group(expr) => expr.get_var_names(),
+        }
+    }
 }
 impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -267,7 +290,7 @@ impl fmt::Display for Expr {
                 left,
                 right,
             } => write!(f, "{}{}{}", left, op_kind, right),
-            Expr::Fun { name, args } => {
+            Expr::Fun { name, params: args } => {
                 let mut args_str = String::new();
                 for arg in args {
                     args_str.push_str(&arg.to_string());
