@@ -1,4 +1,3 @@
-use std::fmt::{self};
 use std::string::String;
 use std::{fmt, fs};
 

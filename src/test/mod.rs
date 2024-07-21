@@ -234,12 +234,12 @@ mod tests {
     }
     #[test]
     fn test_file_parsing() {
-        fn test_file_eval(input_path: &str, env: &mut EvalEnv, expected: Option<f64>) {
+        fn test_file_eval(input_path: &str, eval_env: &mut EvalEnv, expected: Option<f64>) {
             let mut parser =
                 Parser::from_file(input_path).expect("failed file read while testing file parsing");
             let mut val = Expr::Variable("default".to_string());
-            while let Some(expr) = parser.parse() {
-                val = expr.eval(env);
+            while let Some(expr) = parser.parse(&eval_env) {
+                val = expr.eval(eval_env);
                 println!("{} evaluated to {}", expr, val);
             }
             if let Some(expected) = expected {
@@ -253,10 +253,14 @@ mod tests {
             }
         }
         start_test("file parsing/evaluation");
-        let mut env = EvalEnv::new();
-        test_file_eval("./src/test/file_parsing/test1.txt", &mut env, Some(62.0));
+        let mut eval_env = EvalEnv::new();
+        test_file_eval(
+            "./src/test/file_parsing/test1.txt",
+            &mut eval_env,
+            Some(81.0),
+        );
 
-        // test_file_eval_on_string("", &mut env,None);
+        // test_file_eval("", &mut env,None);
         end_test("file parsing/evaluation");
     }
 }
