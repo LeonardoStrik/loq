@@ -49,9 +49,9 @@ impl fmt::Display for OperatorKind {
 }
 
 pub struct EvalEnv {
-    vars: HashMap<String, Box<Expr>>,
-    funs: HashMap<String, Box<Expr>>,
-    diag: Diagnoster,
+    pub vars: HashMap<String, Box<Expr>>,
+    pub funs: HashMap<String, Box<Expr>>,
+    pub diag: Diagnoster,
 }
 impl EvalEnv {
     pub fn new() -> Self {
@@ -180,9 +180,6 @@ impl Expr {
                                 params: args,
                             } = *left.clone()
                             {
-                                //TODO: lot more checking for proper functions, e.g. whether all args are symbolic
-                                // TODO: potentially evaluate duplicate expressions in parsing already?
-                                //  makes the overhead bigger and introduces a need for an eval_env there too, but I'm not a fan of accepting invalid expressions
                                 // TODO: Find a more convenient way to save functions and evaluate them
                                 if args.len() == eval_args.len() {
                                     let mut temp_eval_env = EvalEnv::new();

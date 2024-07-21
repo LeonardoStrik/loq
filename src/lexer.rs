@@ -451,7 +451,33 @@ impl Parser {
                     "while parsing functor".to_string(),
                 )?;
                 match token.kind {
-                    TokenKind::CloseParen => return Some(Expr::Fun { name, params: args }),
+                    TokenKind::CloseParen => {
+                        if let Some(func_def) = eval_env.funs.get(&name) {
+                            if let Some(token) = self.lexer.peek_token() {
+                                if token.kind == TokenKind::Equals {
+                                    return Some(Expr::Fun { name, params: args });
+                                }
+                            }
+                            if let Expr::BinOp {
+                                op_kind: _,
+                                left,
+                                right: _,
+                            } = *func_def.clone()
+                            {
+                                if let Expr::Fun { name, params } = *left {
+                                    if params.len() != args.len() {
+                                        self.diag.report(ParserError::InvalidExpr {
+                                            loc: token.loc,
+                                            found: Box::new(Expr::Fun { name:name.clone(), params: args }),
+                                            reason: format!("function {} is already defined as {}, and the number of arguments doesn't match",name,func_def),
+                                        });
+                                        return None;
+                                    }
+                                }
+                            }
+                        }
+                        return Some(Expr::Fun { name, params: args });
+                    }
                     TokenKind::Comma => continue,
                     _ => panic!("found not comma or close paren while expecting them"),
                 }
