@@ -64,6 +64,13 @@ impl Diagnoster {
                 eprintln!("TODO: report recursive function definition");
                 return;
             }
+            ParserError::IncompleteFuncDef {
+                func_def: _,
+                undefined_var: _,
+            } => {
+                eprintln!("TODO: report incomplete function definition");
+                return;
+            }
         };
         match problem_loc {
             Loc::Repl { line, idx } => {
@@ -109,6 +116,10 @@ pub enum ParserError {
     },
     RecusiveFuncDef {
         func_def: Box<Expr>,
+    },
+    IncompleteFuncDef {
+        func_def: Box<Expr>,
+        undefined_var: String,
     },
 }
 fn pretty_enumerate<T: std::fmt::Display>(items: &Vec<T>) -> String {
@@ -179,6 +190,10 @@ impl fmt::Display for ParserError {
             ParserError::RecusiveFuncDef { func_def } => &format!(
                 "Found function definition {}, which is recursive..",
                 func_def
+            ),
+            ParserError::IncompleteFuncDef { func_def, undefined_var } => &format!(
+                "Found variable {},which is neither defined in locals or a function parameter, in function definition {}.",
+                undefined_var,func_def
             ),
         };
         write!(f, "{}", out)

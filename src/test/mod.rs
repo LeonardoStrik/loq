@@ -167,6 +167,7 @@ mod tests {
         test_functor_parsing_on_str("f(a)=a", &mut eval_env, false);
         test_functor_parsing_on_str("f(1,2)", &mut eval_env, true);
         test_functor_parsing_on_str("f(a,b)=(b+(a-(f(1,2))", &mut eval_env, true);
+        test_functor_parsing_on_str("f(a,b)=a+b+c", &mut eval_env, true);
 
         // test_functor_parsing_on_str("", &mut eval_env, false);
         end_test("functor parsing");
@@ -227,8 +228,8 @@ mod tests {
         test_fun_eval_on_string("f(3)", &mut eval_env, Some(3.0));
         test_fun_eval_on_string("g(a,b)=(a+b)*(3-4)^((a*b)^3*2)", &mut eval_env, None);
         test_fun_eval_on_string("g(2,3)", &mut eval_env, Some(5.0));
-        test_fun_eval_on_string("h(a,b)=a+b+c", &mut eval_env, None);
         test_fun_eval_on_string("c=10", &mut eval_env, None);
+        test_fun_eval_on_string("h(a,b)=a+b+10", &mut eval_env, None);
         test_fun_eval_on_string("h(1,2)", &mut eval_env, Some(13.0));
         end_test("fun evaluation");
     }

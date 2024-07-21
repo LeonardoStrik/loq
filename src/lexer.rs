@@ -527,16 +527,18 @@ impl Parser {
             } = result.clone()
             {
                 if op_kind == OperatorKind::Equals {
-                    if let Expr::Fun { name, params: args } = *left.clone() {
+                    if let Expr::Fun { name, params } = *left.clone() {
+                        // check for recursive functor definition
                         if right.get_fun_names().contains(&name) {
                             self.diag.report(ParserError::RecusiveFuncDef {
                                 func_def: Box::new(result),
                             });
                             return None;
                         }
+                        // check for unused parameters in functor definition
                         let used_vars = right.get_var_names();
                         let mut unused_params = vec![];
-                        for param in args {
+                        for param in params.clone() {
                             match param {
                                 Expr::Variable(name) => {
                                     if !used_vars.contains(&name) {
@@ -559,6 +561,18 @@ impl Parser {
                                 unused_params,
                             });
                             return None;
+                        }
+                        let params: Vec<String> = params.iter().map(|x| x.to_string()).collect();
+                        for var in used_vars {
+                            if !params.contains(&var) {
+                                if let None = eval_env.vars.get(&var) {
+                                    self.diag.report(ParserError::IncompleteFuncDef {
+                                        func_def: Box::new(result),
+                                        undefined_var: var,
+                                    });
+                                    return None;
+                                }
+                            }
                         }
                     }
                 }
