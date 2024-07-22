@@ -461,7 +461,7 @@ impl Parser {
             .lexer
             .expect_token_kinds(&[TokenKind::OpenParen], "while parsing functor".to_string())?;
         let mut args = vec![];
-        while let Some(_) = self.lexer.peek_token() {
+        while let Some(peeked_token) = self.lexer.peek_token() {
             if let Some(arg) = self.parse_impl(eval_env, true) {
                 args.push(arg);
                 let token = self.lexer.expect_token_kinds(
@@ -500,6 +500,13 @@ impl Parser {
                     _ => panic!("found not comma or close paren while expecting them"),
                 }
             } else {
+                if args.len() == 0 {
+                    self.diag.report(ParserError::UnexpectedToken {
+                        found: peeked_token,
+                        while_doing: "trying to parse function arguments".to_string(),
+                    });
+                    return None;
+                }
                 return Some(Expr::Fun { name, params: args });
             }
         }
