@@ -89,7 +89,7 @@ impl fmt::Display for TokenKind {
             TokenKind::Equals => "=",
             TokenKind::Ident => "Ident",
             TokenKind::NumLit => "NumLit",
-            TokenKind::EOL => "\n",
+            TokenKind::EOL => "\\n",
         };
 
         write!(f, "{}", output)
