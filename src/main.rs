@@ -11,11 +11,13 @@ pub mod lexer;
 #[allow(dead_code)]
 #[allow(unused_mut)]
 mod repl;
+use repl::Repl;
 mod test;
 
 #[allow(dead_code)]
 #[allow(unused_mut)]
 fn main() -> io::Result<()> {
-    repl::repl()?;
+    let mut repl = Repl::new();
+    repl.run()?;
     Ok(())
 }
