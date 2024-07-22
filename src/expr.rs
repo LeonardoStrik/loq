@@ -201,7 +201,7 @@ impl Expr {
                                         return Expr::BinOp {
                                             op_kind: OperatorKind::Equals,
                                             left: left,
-                                            right: Box::new(right.eval_recursive(&temp_eval_env)),
+                                            right: Box::new(right),
                                         };
                                     };
                                 }
