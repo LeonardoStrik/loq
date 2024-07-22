@@ -37,6 +37,7 @@ pub enum TokenKind {
     Comma,
     // operators
     Equals,
+    DoubleEquals,
     Mult,
     Div,
     Plus,
@@ -45,6 +46,7 @@ pub enum TokenKind {
     // operands
     Ident,
     NumLit,
+    Bool,
 }
 
 impl TokenKind {
@@ -55,8 +57,10 @@ impl TokenKind {
         TokenKind::Min,
         TokenKind::Pow,
         TokenKind::Equals,
+        TokenKind::DoubleEquals,
     ];
-    pub const OPERANDS: &'static [TokenKind] = &[TokenKind::Ident, TokenKind::NumLit];
+    pub const OPERANDS: &'static [TokenKind] =
+        &[TokenKind::Ident, TokenKind::NumLit, TokenKind::Bool];
     fn is_in(self, expected: &[TokenKind]) -> bool {
         for kind in expected {
             if (*kind) == (self) {
@@ -89,7 +93,9 @@ impl fmt::Display for TokenKind {
             TokenKind::Equals => "=",
             TokenKind::Ident => "Ident",
             TokenKind::NumLit => "NumLit",
+            TokenKind::Bool => "Bool",
             TokenKind::EOL => "\\n",
+            TokenKind::DoubleEquals => "=",
         };
 
         write!(f, "{}", output)
@@ -112,7 +118,17 @@ impl Token {
             _ => panic!("called to_value on a {}", self),
         }
     }
+    fn to_bool(self) -> bool {
+        match self.kind {
+            TokenKind::Bool => self
+                .value
+                .parse::<bool>()
+                .expect("failed to parse NumLit in to_value"),
+            _ => panic!("called to_value on a {}", self),
+        }
+    }
 }
+
 impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let output = match &self.kind {
@@ -221,11 +237,21 @@ impl Lexer {
                     loc: current_loc,
                     value: self.next_char().unwrap().to_string(),
                 }),
-                '=' => Some(Token {
-                    kind: TokenKind::Equals,
-                    loc: current_loc,
-                    value: self.next_char().unwrap().to_string(),
-                }),
+                '=' => {
+                    let mut value = self.next_char().unwrap().to_string();
+                    let mut kind = TokenKind::Equals;
+                    if let Some(peek_char) = self.peek_char() {
+                        if peek_char == '=' {
+                            kind = TokenKind::DoubleEquals;
+                            value.push(self.next_char().unwrap());
+                        }
+                    }
+                    Some(Token {
+                        kind,
+                        loc: current_loc,
+                        value,
+                    })
+                }
                 ',' => Some(Token {
                     kind: TokenKind::Comma,
                     loc: current_loc,
@@ -261,9 +287,12 @@ impl Lexer {
                     while let Some(next_char) = self.next_char_if(|x| x.is_alphanumeric()) {
                         temp.push(next_char)
                     }
-
+                    let mut kind = TokenKind::Ident;
+                    if temp == "true" || temp == "false" {
+                        kind = TokenKind::Bool
+                    }
                     Some(Token {
-                        kind: TokenKind::Ident,
+                        kind,
                         loc: current_loc,
                         value: temp.clone(),
                     })
@@ -379,6 +408,7 @@ impl Parser {
                 Some(Expr::Variable(token.value))
             }
             TokenKind::NumLit => Some(Expr::Numeric(token.to_value())),
+            TokenKind::Bool => Some(Expr::Bool(token.to_bool())),
             TokenKind::OpenParen => {
                 let operand = self.parse_impl(eval_env, false)?;
                 let _ = self.lexer.expect_token_kinds(
@@ -640,7 +670,7 @@ impl Parser {
                         return None;
                     }
                 }
-                TokenKind::Ident | TokenKind::NumLit => {
+                TokenKind::Ident | TokenKind::NumLit | TokenKind::Bool => {
                     if let Some(expr) = self.stash.last() {
                         let while_doing = format!("Parsing after expression {}", expr);
                         self.diag.report(ParserError::UnexpectedToken {
@@ -673,7 +703,8 @@ impl Parser {
                 | TokenKind::Div
                 | TokenKind::Plus
                 | TokenKind::Min
-                | TokenKind::Pow => {
+                | TokenKind::Pow
+                | TokenKind::DoubleEquals => {
                     let msg = match parsing_args {
                         true => "parsing function arguments",
                         false => "parsing",

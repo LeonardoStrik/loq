@@ -2,9 +2,10 @@ use std::{collections::HashMap, fmt, iter::zip};
 
 use crate::{diag::Diagnoster, lexer::TokenKind};
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OperatorKind {
     Equals,
+    DoubleEquals,
     Mult,
     Div,
     Plus,
@@ -20,11 +21,13 @@ impl OperatorKind {
             OperatorKind::Plus => 2,
             OperatorKind::Min => 2,
             OperatorKind::Equals => 3,
+            OperatorKind::DoubleEquals => 3,
         }
     }
     pub fn from_token_kind(kind: &TokenKind) -> Self {
         match kind {
             TokenKind::Equals => Self::Equals,
+            TokenKind::DoubleEquals => Self::DoubleEquals,
             TokenKind::Mult => Self::Mult,
             TokenKind::Div => Self::Div,
             TokenKind::Plus => Self::Plus,
@@ -37,12 +40,13 @@ impl OperatorKind {
 impl fmt::Display for OperatorKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let output = match self {
-            Self::Mult => "*",
-            Self::Div => "/",
-            Self::Plus => "+",
-            Self::Min => "-",
-            Self::Pow => "^",
-            Self::Equals => "=",
+            OperatorKind::Mult => "*",
+            OperatorKind::Div => "/",
+            OperatorKind::Plus => "+",
+            OperatorKind::Min => "-",
+            OperatorKind::Pow => "^",
+            OperatorKind::Equals => "=",
+            OperatorKind::DoubleEquals => "==",
         };
         write!(f, "{}", output)
     }
@@ -76,6 +80,7 @@ pub enum Expr {
     Numeric(f64),
     Variable(String),
     Group(Box<Expr>),
+    Bool(bool),
 }
 impl Expr {
     pub fn eval(&self, eval_env: &mut EvalEnv) -> Expr {
@@ -119,12 +124,14 @@ impl Expr {
                 left,
                 right,
             } => {
-                let a = left.eval_recursive(eval_env);
-                let b = right.eval_recursive(eval_env);
-                if a.is_num() && b.is_num() {
-                    let a = a.expect_val("expect val on is_num==true");
-                    let b = b.expect_val("expect val on is_num==true");
+                let left = left.eval_recursive(eval_env);
+                let right = right.eval_recursive(eval_env);
+                if left.is_num() && right.is_num() {
+                    // evaluate pure numerical expressions
+                    let a = left.expect_val("expect val on is_num==true");
+                    let b = right.expect_val("expect val on is_num==true");
                     return match op_kind {
+                        //TODO:  maybe overloading addition etc for Expr to simplify?
                         OperatorKind::Mult => Expr::Numeric(a * b),
                         OperatorKind::Div => Expr::Numeric(a / b),
                         OperatorKind::Plus => Expr::Numeric(a + b),
@@ -135,11 +142,37 @@ impl Expr {
                             left: Box::new(left.eval_recursive(eval_env)),
                             right: Box::new(right.eval_recursive(eval_env)),
                         },
+                        OperatorKind::DoubleEquals => {
+                            // TODO: decide what to do for symbolic evaluations?
+                            // would like to be able to ascertain that f(a,b)==f(a,b) is true
+                            let left = left.eval_recursive(eval_env);
+                            let right = right.eval_recursive(eval_env);
+                            if left == right {
+                                return Expr::Bool(true);
+                            } else {
+                                return Expr::Bool(false);
+                            }
+                        }
                     };
                 }
-                let mut right = right.eval_recursive(eval_env);
+                if left.is_bool() && right.is_bool() {
+                    // evaluate pure boolean expressions
+                    let left = left.expect_bool("expected bool on is_bool=true");
+                    let right = right.expect_bool("expected bool on is_bool=true");
+                    return match op_kind {
+                        OperatorKind::DoubleEquals => Expr::Bool(left == right),
+                        OperatorKind::Mult => Expr::Bool(left && right),
+                        OperatorKind::Equals => todo!(),
+                        OperatorKind::Div => todo!(),
+                        OperatorKind::Plus => Expr::Bool(left || right),
+                        OperatorKind::Min => todo!(),
+                        OperatorKind::Pow => todo!(),
+                    };
+                }
+                let mut right = right;
                 let mut op_kind = op_kind;
                 if right.is_num() {
+                    // simplification step, maybe better to factor out with other simplifications?
                     if right.expect_val("expected val on is_num==true") < 0.0 {
                         match op_kind {
                             OperatorKind::Plus => {
@@ -160,8 +193,8 @@ impl Expr {
                 }
                 Expr::BinOp {
                     op_kind: *op_kind,
-                    left: Box::new(left.eval_recursive(eval_env)),
-                    right: Box::new(right.eval_recursive(eval_env)),
+                    left: Box::new(left),
+                    right: Box::new(right),
                 }
             }
             Expr::Fun {
@@ -225,12 +258,13 @@ impl Expr {
             }
             Expr::Group(expr) => {
                 let expr = expr.eval_recursive(eval_env);
-                if expr.is_num() {
+                if expr.is_num() || expr.is_bool() || expr.is_var() {
                     expr
                 } else {
                     Expr::Group(Box::new(expr))
                 }
             }
+            Expr::Bool(_) => self.clone(),
         }
     }
     pub fn expect_val(&self, msg: &str) -> f64 {
@@ -245,6 +279,12 @@ impl Expr {
             _ => panic!("{}", msg),
         }
     }
+    pub fn expect_bool(&self, msg: &str) -> bool {
+        match self {
+            Expr::Bool(val) => *val,
+            _ => panic!("{}", msg),
+        }
+    }
     pub fn is_num(&self) -> bool {
         match self {
             Expr::Numeric(_) => true,
@@ -254,6 +294,12 @@ impl Expr {
     pub fn is_var(&self) -> bool {
         match self {
             Expr::Variable(_) => true,
+            _ => false,
+        }
+    }
+    pub fn is_bool(&self) -> bool {
+        match self {
+            Expr::Bool(_) => true,
             _ => false,
         }
     }
@@ -276,6 +322,7 @@ impl Expr {
             Expr::Numeric(_) => vec![],
             Expr::Variable(name) => vec![name.clone()],
             Expr::Group(expr) => expr.get_var_names(),
+            Expr::Bool(_) => vec![],
         }
     }
     pub fn get_fun_names(&self) -> Vec<String> {
@@ -291,9 +338,11 @@ impl Expr {
             Expr::Numeric(_) => vec![],
             Expr::Variable(_) => vec![],
             Expr::Group(expr) => expr.get_fun_names(),
+            Expr::Bool(_) => vec![],
         }
     }
 }
+
 impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -316,6 +365,7 @@ impl fmt::Display for Expr {
             Expr::Numeric(value) => write!(f, "{}", value),
             Expr::Variable(name) => write!(f, "{}", name),
             Expr::Group(expr) => write!(f, "({})", expr),
+            Expr::Bool(val) => write!(f, "{}", val),
         }
     }
 }

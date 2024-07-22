@@ -8,6 +8,8 @@ struct ReplEnv {
     history: Vec<String>,
     stdout: Stdout,
     stdin: Stdin,
+    debug_mode: bool,
+
     quit: bool,
     eval_env: EvalEnv,
 }
@@ -18,6 +20,7 @@ impl ReplEnv {
             history: Vec::new(),
             stdin: io::stdin(),
             stdout: io::stdout(),
+            debug_mode: true,
             quit: false,
             eval_env: EvalEnv::new(),
         }
@@ -50,12 +53,24 @@ pub fn repl() -> io::Result<()> {
             //         None => println!("ERROR: Nothing to undo!"),
             //     };
             // }
+            "debug;" => {
+                repl_env.debug_mode = !repl_env.debug_mode;
+                println!("Debug mode set to {}", repl_env.debug_mode)
+            }
             input => {
                 let mut parser = Parser::from_string(input.to_string());
+                let mut prefix;
                 if let Some(expr) = parser.parse(&repl_env.eval_env) {
-                    match expr.eval(&mut repl_env.eval_env) {
-                        Expr::Numeric(val) => println!("  =>value:  {}", val),
-                        otherwise => println!("  =>symbolic  {}", otherwise),
+                    let val = expr.eval(&mut repl_env.eval_env);
+                    prefix = match val {
+                        Expr::Numeric(_) => "Num",
+                        Expr::Bool(__) => "Bool",
+                        _ => "Sym",
+                    };
+                    if repl_env.debug_mode {
+                        println!("  => {prefix}: {val:?}");
+                    } else {
+                        println!("  => {prefix}: {val}");
                     }
                 }
             }

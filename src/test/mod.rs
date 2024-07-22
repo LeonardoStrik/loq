@@ -264,4 +264,32 @@ mod tests {
         // test_file_eval("", &mut env,None);
         end_test("file parsing/evaluation");
     }
+    #[test]
+    fn test_bool_eval() {
+        let mut eval_env = EvalEnv::new();
+
+        fn test_bool_eval_on_string(input: &str, eval_env: &mut EvalEnv, expected: Option<bool>) {
+            let mut parser = Parser::from_string(input.to_string());
+            let expr = parser.parse(eval_env).expect("failed to parse expression");
+            let val = expr.eval(eval_env);
+            println!("{} evaluated to {}", expr, val);
+            if let Some(expected) = expected {
+                assert_eq!(
+                    val.expect_bool("could not evaluate expr"),
+                    expected,
+                    "evaluating {} did not yield {}",
+                    expr,
+                    expected
+                );
+            }
+        }
+        start_test("bool evaluation");
+        // test_bool_eval_on_string("a==a", &mut eval_env, Some(true));
+        test_bool_eval_on_string("2==2", &mut eval_env, Some(true));
+        test_bool_eval_on_string("(2==3)==(3==2)", &mut eval_env, Some(true));
+        test_bool_eval_on_string("a=2", &mut eval_env, None);
+        test_bool_eval_on_string("a==2", &mut eval_env, Some(true));
+        test_bool_eval_on_string("a==a", &mut eval_env, Some(true));
+        end_test("bool evaluation");
+    }
 }
