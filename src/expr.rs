@@ -54,14 +54,14 @@ impl fmt::Display for OperatorKind {
 
 pub struct EvalEnv {
     pub vars: HashMap<String, Box<Expr>>,
-    pub funs: HashMap<String, Box<Expr>>,
+    pub funcs: HashMap<String, Box<Expr>>,
     pub diag: Diagnoster,
 }
 impl EvalEnv {
     pub fn new() -> Self {
         EvalEnv {
             vars: HashMap::new(),
-            funs: HashMap::new(),
+            funcs: HashMap::new(),
             diag: Diagnoster {},
         }
     }
@@ -96,7 +96,7 @@ impl Expr {
                     let mut right = right.clone();
                     match *left.clone() {
                         Expr::Fun { name, params: _ } => {
-                            eval_env.funs.insert(name, Box::new(self.clone()));
+                            eval_env.funcs.insert(name, Box::new(self.clone()));
                         }
                         Expr::Variable(name) => {
                             right = Box::new(right.eval_recursive(eval_env));
@@ -201,7 +201,7 @@ impl Expr {
                 name: eval_name,
                 params: eval_args,
             } => {
-                if let Some(val) = eval_env.funs.get(eval_name) {
+                if let Some(val) = eval_env.funcs.get(eval_name) {
                     match *val.clone() {
                         Expr::BinOp {
                             op_kind: _,

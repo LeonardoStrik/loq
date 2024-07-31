@@ -25,7 +25,7 @@ impl Repl {
             eval_env: EvalEnv::new(),
         }
     }
-    pub fn read_input(&mut self) -> io::Result<()> {
+    fn read_input(&mut self) -> io::Result<()> {
         self.input.clear();
         print!(">  ");
         self.stdout.flush()?;
@@ -34,16 +34,42 @@ impl Repl {
         self.history.push(self.input.clone());
         Ok(())
     }
-
+    pub fn print_locals(&self) {
+        let no_vars = self.eval_env.vars.is_empty();
+        if !no_vars {
+            println!("---------------------------------------");
+            println!("Variables");
+            println!("---------------------------------------");
+            for (name, value) in self.eval_env.vars.iter() {
+                println!("{}: {}", name, value);
+            }
+        }
+        let no_funcs = self.eval_env.funcs.is_empty();
+        if !no_funcs {
+            println!("---------------------------------------");
+            println!("Functors");
+            println!("---------------------------------------");
+            for (_, body) in self.eval_env.funcs.iter() {
+                println!("{}", body);
+            }
+        }
+        if no_vars && no_funcs {
+            println!("No variables or functors in local environment!");
+        }
+    }
     pub fn run(&mut self) -> io::Result<()> {
         while !self.quit {
             self.read_input()?;
             match self.input.as_str() {
-                "quit;" | "q;" => break,
-                "debug;" => {
-                    self.debug_mode = !self.debug_mode;
-                    println!("Debug mode set to {}", self.debug_mode);
-                }
+                command if command.ends_with(';') => match command.strip_suffix(';').unwrap() {
+                    "quit" | "q" => break,
+                    "debug" | "db" => {
+                        self.debug_mode = !self.debug_mode;
+                        println!("Debug mode set to {}", self.debug_mode);
+                    }
+                    "locals" | "ls" => self.print_locals(),
+                    otherwise => println!("Unknown command {}", otherwise),
+                },
                 input => {
                     let mut parser = Parser::from_string(input.to_string());
                     let mut prefix;

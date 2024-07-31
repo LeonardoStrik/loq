@@ -500,7 +500,7 @@ impl Parser {
                 )?;
                 match token.kind {
                     TokenKind::CloseParen => {
-                        if let Some(func_def) = eval_env.funs.get(&name) {
+                        if let Some(func_def) = eval_env.funcs.get(&name) {
                             if let Some(token) = self.lexer.peek_token() {
                                 if token.kind == TokenKind::Equals {
                                     return Some(Expr::Fun { name, params: args });
