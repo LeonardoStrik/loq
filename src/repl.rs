@@ -62,7 +62,7 @@ impl Repl {
             self.read_input()?;
             match self.input.as_str() {
                 command if command.ends_with(';') => match command.strip_suffix(';').unwrap() {
-                    "quit" | "q" => break,
+                    "quit" | "q" => self.quit = true,
                     "debug" | "db" => {
                         self.debug_mode = !self.debug_mode;
                         println!("Debug mode set to {}", self.debug_mode);
@@ -90,5 +90,45 @@ impl Repl {
             }
         }
         Ok(())
+    }
+}
+
+trait Command {
+    fn run(&self, repl: &mut Repl);
+    fn usage(&self, repl: &Repl) -> String;
+    fn get_aliases(&self) -> &'static [&'static str];
+}
+
+// Looking for the implementation I want the macro to produce in the first place
+enum ReplCommand {
+    Quit,
+}
+impl Repl {
+    fn run_quit(&mut self) {
+        self.quit = true;
+    }
+    const COMMAND_LIST: &'static [ReplCommand] = &[ReplCommand::Quit];
+}
+impl Command for ReplCommand {
+    fn run(&self, repl: &mut Repl) {
+        match self {
+            ReplCommand::Quit => repl.run_quit(),
+        }
+    }
+
+    fn usage(&self, repl: &Repl) -> String {
+        match self {
+            ReplCommand::Quit => format!(
+                "{}; or {}; => Exits the REPL.",
+                self.get_aliases()[0],
+                self.get_aliases()[1]
+            ),
+        }
+    }
+
+    fn get_aliases(&self) -> &'static [&'static str] {
+        match self {
+            ReplCommand::Quit => &["quit", "q"],
+        }
     }
 }

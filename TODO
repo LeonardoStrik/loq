@@ -1,0 +1,8 @@
+
+Repl:
+  ☐ Use the entry returned by hashmap.get() to make a history for the REPL?
+  
+Expr:
+
+Parser:
+  ☐ Take string references instead of ownership?
