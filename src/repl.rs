@@ -30,7 +30,7 @@ impl Repl {
         print!(">  ");
         self.stdout.flush()?;
         self.stdin.read_line(&mut self.input)?;
-        self.input.truncate(self.input.len() - 2);
+        self.input.truncate(self.input.len() - 1);
         self.history.push(self.input.clone());
         Ok(())
     }
