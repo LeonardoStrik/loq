@@ -12,18 +12,13 @@ pub mod lexer;
 #[allow(unused_mut)]
 mod repl;
 use repl::Repl;
-#[allow(dead_code)]
-pub mod tui;
-use tui::main_tui_loop;
-mod test;
 
 #[allow(dead_code)]
 #[allow(unused_mut)]
 fn main() -> io::Result<()> {
     env::set_var("RUST_BACKTRACE", "1");
 
-    // let mut repl = Repl::new();
-    // repl.run()?;
-    // Ok(())
-    main_tui_loop()
+    let mut repl = Repl::new();
+    repl.run()?;
+    Ok(())
 }
