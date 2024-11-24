@@ -1,14 +1,17 @@
+use color_eyre::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers, ModifierKeyCode};
 use ratatui::prelude::Backend;
 use ratatui::style::Modifier;
 use ratatui::Terminal;
-
+use tui_textarea::TextArea;
 // use loq::expr::{EvalEnv, Expr};
 // use loq::lexer::Parser;
 use std::io::{self, stderr, Stdout};
 use std::io::{Stdin, Write};
 use std::time::Duration;
 use std::vec::Vec;
+
+use crate::ui::Console;
 
 use super::ui::draw_ui;
 
@@ -30,20 +33,20 @@ impl AppWindow {
         }
     }
 }
-pub struct App {
-    pub input_buffer: Vec<char>,
-    pub contents: Vec<String>,
+pub struct App<'a> {
+    pub editor: TextArea<'a>,
+    pub console: Console,
     history: Vec<String>,
     mode: AppMode,
     quit: bool,
     // eval_env: EvalEnv,
     pub currently_active: AppWindow,
 }
-impl App {
+impl App<'_> {
     pub fn new() -> Self {
         App {
-            input_buffer: Vec::new(),
-            contents: Vec::new(),
+            console: Console::new(),
+            editor: TextArea::default(),
             history: Vec::new(),
             mode: AppMode::Debug,
             quit: false,
@@ -52,7 +55,7 @@ impl App {
         }
     }
 
-    pub fn run<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> io::Result<()> {
+    pub fn run<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<()> {
         while !self.quit {
             terminal.draw(|f| draw_ui(f, self))?;
             while let Ok(true) = event::poll(Duration::ZERO) {
@@ -75,47 +78,9 @@ impl App {
             // Skip events that are not KeyEventKind::Press
             return;
         }
-        match key_event.code {
-            KeyCode::Backspace => _ = self.input_buffer.pop(),
-            KeyCode::Enter => {
-                if !self.input_buffer.is_empty() {
-                    self.contents.push(self.input_buffer.iter().collect());
-                    self.input_buffer.clear();
-                }
-            }
-            KeyCode::Left => (),
-            KeyCode::Right => (),
-            KeyCode::Up => (),
-            KeyCode::Down => (),
-            KeyCode::Home => (),
-            KeyCode::End => (),
-            KeyCode::PageUp => (),
-            KeyCode::PageDown => (),
-            KeyCode::Tab => self.currently_active = self.currently_active.set_next(),
-            KeyCode::BackTab => (),
-            KeyCode::Delete => (),
-            KeyCode::Insert => (),
-            KeyCode::F(_) => (),
-            KeyCode::Char(mut ch) => {
-                if key_event.modifiers.contains(KeyModifiers::SHIFT) {
-                    ch = ch.to_ascii_uppercase()
-                }
-                self.input_buffer.push(ch);
-            }
-            KeyCode::Null => (),
-            KeyCode::Esc => self.quit = true,
-            KeyCode::CapsLock => (),
-            KeyCode::ScrollLock => (),
-            KeyCode::NumLock => (),
-            KeyCode::PrintScreen => (),
-            KeyCode::Pause => (),
-            KeyCode::Menu => (),
-            KeyCode::KeypadBegin => (),
-            KeyCode::Media(media_key_code) => (),
-            KeyCode::Modifier(modifier_key_code) => (),
+        if key_event.code == KeyCode::Esc {
+            self.quit = true
         }
-    }
-    pub fn contents_to_text(&self) -> String {
-        self.contents.join("\n")
+        self.editor.input(key_event);
     }
 }

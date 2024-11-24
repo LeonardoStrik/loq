@@ -24,16 +24,11 @@ use std::{thread::sleep, time::Instant};
 use ui::draw_ui;
 mod app;
 mod ui;
-const REFRESH_RATE: f32 = 60.0;
-const TICK_TIME: f32 = 1.0 / REFRESH_RATE;
 
-pub fn main() -> io::Result<()> {
-    // setup terminal
-    let mut term = ratatui::init();
-    // create app and run it
-    let mut app = App::new();
-    let res = app.run(&mut term);
-
+fn main() -> color_eyre::Result<()> {
+    color_eyre::install()?;
+    let mut terminal = ratatui::init();
+    let result = App::new().run(&mut terminal);
     ratatui::restore();
-    res
+    result
 }
