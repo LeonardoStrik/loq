@@ -8,10 +8,11 @@ use tui_textarea::TextArea;
 // use loq::lexer::Parser;
 use std::io::{self, stderr, Stdout};
 use std::io::{Stdin, Write};
+use std::ops::DerefMut;
 use std::time::Duration;
 use std::vec::Vec;
 
-use crate::ui::Console;
+use crate::console::Console;
 
 use super::ui::draw_ui;
 
@@ -25,7 +26,7 @@ pub enum AppWindow {
     Console,
 }
 impl AppWindow {
-    pub fn set_next(&mut self) -> Self {
+    pub fn get_next(&self) -> Self {
         match self {
             AppWindow::Editor => AppWindow::Env,
             AppWindow::Env => AppWindow::Console,
@@ -80,7 +81,15 @@ impl App<'_> {
         }
         if key_event.code == KeyCode::Esc {
             self.quit = true
+        } else if (key_event.code == KeyCode::Char('k') || key_event.code == KeyCode::Char('K'))
+            && key_event.modifiers.contains(KeyModifiers::CONTROL)
+        {
+            self.currently_active = self.currently_active.get_next()
         }
-        self.editor.input(key_event);
+        match self.currently_active {
+            AppWindow::Editor => _ = self.editor.input(key_event),
+            AppWindow::Env => (),
+            AppWindow::Console => self.console.handle_key_event(key_event),
+        }
     }
 }
