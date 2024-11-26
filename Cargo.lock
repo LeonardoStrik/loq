@@ -351,6 +351,7 @@ version = "0.1.0"
 dependencies = [
  "color-eyre",
  "crossterm",
+ "loq",
  "ratatui",
  "tui-textarea",
 ]
@@ -504,6 +505,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b6dfecf2c74bce2466cabf93f6664d6998a69eb21e39f4207930065b27b771f"
 dependencies = [
  "bitflags",
+]
+
+[[package]]
+name = "repl"
+version = "0.1.0"
+dependencies = [
+ "loq",
 ]
 
 [[package]]

@@ -1,6 +1,10 @@
+use crate::app;
+
 use super::ui::FILLER_TEXT;
+use core::fmt;
 use std::{
     cmp::{max, min},
+    fmt::Formatter,
     io::{stderr, Write},
 };
 
@@ -12,17 +16,46 @@ use ratatui::{
     text::Text,
     widgets::{Block, Borders, Paragraph, Widget, Wrap},
 };
-#[derive(Default)]
+#[derive(Default, Clone, Copy)]
 struct Cursor {
     line: usize,
     ch: usize,
 }
+#[derive(Default, Clone, Copy)]
+struct DisplayCursor {
+    row: usize,
+    col: usize,
+}
+impl DisplayCursor {
+    fn from_cursor(cursor: &Cursor) -> Self {
+        Self {
+            row: cursor.line,
+            col: cursor.ch,
+        }
+    }
+}
 
+pub enum Line {
+    InputLine(String),
+    OutputLine(String),
+}
+impl fmt::Display for Line {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Line::InputLine(val) => val,
+                Line::OutputLine(val) => val,
+            }
+        )
+    }
+}
 pub struct Console {
     input_buffer: Vec<Vec<char>>,
-    content: Vec<String>,
+    content: Vec<Line>,
     cursor: Cursor,
-
+    display_cursor: DisplayCursor,
     style: Style,
 }
 impl Console {
@@ -31,21 +64,31 @@ impl Console {
             input_buffer: vec![Vec::new()],
             content: Vec::new(),
             cursor: Cursor::default(),
+            display_cursor: DisplayCursor::default(),
             style: Style::default(),
         }
     }
-    fn to_rows(&self, line_length: usize) -> Vec<String> {
+    fn to_rows(&self, line_length: usize) -> (Vec<String>, DisplayCursor) {
         let mut out = vec![];
-        for line in self.input_buffer.iter() {
+        let mut display_cursor = DisplayCursor::from_cursor(&self.cursor);
+        for (line_idx, line) in self.input_buffer.iter().enumerate() {
             let mut start_idx = 0;
             let mut end_idx = min(line.len(), line_length);
+
             while start_idx < line.len() {
+                if (self.cursor.line == line_idx) && (display_cursor.col >= line_length) {
+                    display_cursor.col -= line_length;
+                    display_cursor.row += 1;
+                }
                 out.push(line[start_idx..end_idx].iter().collect());
                 start_idx = end_idx;
                 end_idx = min(line.len(), start_idx + line_length)
             }
         }
-        out
+        (out, display_cursor)
+    }
+    pub fn println(&mut self, data: Line) {
+        self.content.push(data);
     }
     pub fn set_style(&mut self, style: Style) {
         self.style = style;
@@ -62,19 +105,20 @@ impl Console {
     fn decrement_cursor(&mut self) {
         self.cursor.ch = self.cursor.ch.saturating_sub(1);
     }
-    pub fn handle_key_event(&mut self, key_event: KeyEvent) -> () {
+    pub fn handle_key_event(&mut self, key_event: KeyEvent) -> Option<String> {
         match key_event.code {
             crossterm::event::KeyCode::Enter => {
                 if !key_event.modifiers.contains(KeyModifiers::CONTROL) {
-                    self.content.push(
-                        self.input_buffer
-                            .iter()
-                            .map(|line| line.iter().collect::<String>())
-                            .collect::<Vec<String>>()
-                            .join(" "),
-                    );
+                    let input = self
+                        .input_buffer
+                        .iter()
+                        .map(|line| line.iter().collect::<String>())
+                        .collect::<Vec<String>>()
+                        .join(" ");
+                    self.content.push(Line::InputLine(input.clone()));
                     self.input_buffer = vec![Vec::new()];
                     self.cursor = Cursor::default();
+                    return Some(input);
                 }
             }
 
@@ -121,6 +165,7 @@ impl Console {
             crossterm::event::KeyCode::Media(media_key_code) => (),
             crossterm::event::KeyCode::Modifier(modifier_key_code) => (),
         }
+        None
     }
 }
 impl Widget for &Console {
@@ -144,7 +189,7 @@ impl Widget for &Console {
             })
             .style(self.style);
         let input_inner = console_input_block.inner(area);
-        let rows = self.to_rows(input_inner.width as usize);
+        let (rows, display_cursor) = self.to_rows(input_inner.width as usize);
         let chunks = Layout::default()
             .constraints([
                 Constraint::Min(3),
@@ -153,9 +198,16 @@ impl Widget for &Console {
             .split(area);
         let (console_contents_area, console_input_area) = (chunks[0], chunks[1]);
 
-        let console_contents = Paragraph::new(Text::styled(self.content.join("\n"), self.style))
-            .block(console_contents_block)
-            .wrap(Wrap { trim: false });
+        let console_contents = Paragraph::new(Text::styled(
+            self.content
+                .iter()
+                .map(|item| item.to_string())
+                .collect::<Vec<String>>()
+                .join("\n"),
+            self.style,
+        ))
+        .block(console_contents_block)
+        .wrap(Wrap { trim: false });
         console_contents.render(console_contents_area, buf);
         console_input_block.clone().render(console_input_area, buf);
         let input_inner = console_input_block.inner(console_input_area);
@@ -169,8 +221,8 @@ impl Widget for &Console {
         }
         buf.set_style(
             Rect {
-                x: input_inner.left() + self.cursor.ch as u16,
-                y: input_inner.top() + self.cursor.line as u16,
+                x: input_inner.left() + display_cursor.col as u16,
+                y: input_inner.top() + display_cursor.row as u16,
                 width: 1,
                 height: 1,
             },
@@ -187,7 +239,7 @@ mod test {
     #[test]
     fn test() {
         let cons = Console::new();
-        for row in cons.to_rows(6) {
+        for row in cons.to_rows(6).0 {
             println!("{}", row)
         }
     }

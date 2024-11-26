@@ -70,9 +70,7 @@ pub fn draw_ui(frame: &mut Frame, app: &mut App) {
         .block(header_block)
         .centered();
 
-    let env = Paragraph::new(Text::styled(FILLER_TEXT, env_style))
-        .block(env_block)
-        .wrap(Wrap { trim: false });
+    let env = List::new(app.list_eval_env()).block(env_block);
     let footer = Paragraph::new(Text::styled("Footer", footer_style))
         .block(footer_block)
         .centered();

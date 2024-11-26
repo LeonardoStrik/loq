@@ -1,7 +1,8 @@
-use crate::expr::{EvalEnv, Expr};
-use crate::lexer::Parser;
+use loq::expr::{EvalEnv, Expr};
+use loq::lexer::Parser;
 use std::io::{self, Stdout};
 use std::io::{Stdin, Write};
+use std::ops::Deref;
 use std::vec::Vec;
 pub struct Repl {
     input: String,
@@ -30,7 +31,7 @@ impl Repl {
         print!(">  ");
         self.stdout.flush()?;
         self.stdin.read_line(&mut self.input)?;
-        self.input.truncate(self.input.len() - 1);
+        self.input = self.input.to_string().trim_end().into();
         self.history.push(self.input.clone());
         Ok(())
     }
